@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createTtlCache } from './cache.js';
 import { getAppConfig, normalizeLimitsQuery } from './config.js';
@@ -10,11 +11,16 @@ const packageInfo = JSON.parse(readFileSync(new URL('../package.json', import.me
 const app = express();
 const cache = createTtlCache(config.cacheTtlSeconds);
 const scanProgress = new Map();
-const scanProgressTtlMs = 10 * 60 * 1000;
+const scanJobs = new Map();
+const scanJobTtlMs = 60 * 60 * 1000;
+
+let latestScanId = '';
 
 let ociContextPromise;
 
 app.disable('x-powered-by');
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use(express.static(new URL('../public', import.meta.url).pathname));
 
 app.get('/healthz', (req, res) => {
@@ -44,9 +50,62 @@ app.get('/api/limits', async (req, res, next) => {
   }
 });
 
+app.post('/api/scans', async (req, res, next) => {
+  try {
+    const job = await createScanJob({ ...req.query, ...req.body });
+    res.status(job.status === 'complete' ? 200 : 202).json(scanJobSummary(job));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/scans/latest', (req, res) => {
+  cleanupScanJobs();
+  const job = latestScanJob();
+  if (!job) {
+    res.status(404).json({ error: 'No scan jobs found' });
+    return;
+  }
+
+  res.json(scanJobSummary(job));
+});
+
+app.get('/api/scans/:scanId', (req, res) => {
+  cleanupScanJobs();
+  const job = scanJobFrom(req.params.scanId);
+  if (!job) {
+    res.status(404).json({ error: 'Scan job not found' });
+    return;
+  }
+
+  res.json(scanJobSummary(job));
+});
+
+app.get('/api/scans/:scanId/result', (req, res) => {
+  cleanupScanJobs();
+  const job = scanJobFrom(req.params.scanId);
+  if (!job) {
+    res.status(404).json({ error: 'Scan job not found' });
+    return;
+  }
+
+  if (job.status === 'failed') {
+    res.status(500).json({ error: job.error?.message || 'Scan failed' });
+    return;
+  }
+
+  if (job.status !== 'complete' || !job.result) {
+    res.status(202).json(scanJobSummary(job));
+    return;
+  }
+
+  res.json(job.result);
+});
+
 app.get('/api/progress/:scanId', (req, res) => {
-  cleanupScanProgress();
-  const progress = scanProgress.get(scanIdFrom(req.params.scanId));
+  cleanupScanJobs();
+  const job = scanJobFrom(req.params.scanId);
+  const progress = job?.progress || scanProgress.get(scanIdFrom(req.params.scanId));
   if (!progress) {
     res.status(404).json({ error: 'Scan progress not found' });
     return;
@@ -66,6 +125,14 @@ app.get('/api/limits.csv', async (req, res, next) => {
   }
 });
 
+app.get('/api/scans/:scanId/limits.csv', (req, res) => {
+  const report = completedScanReport(req.params.scanId, res);
+  if (!report) return;
+  res.type('text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="oci-service-limits.csv"');
+  res.send(reportToCsv(report));
+});
+
 app.get('/api/limits.xlsx', async (req, res, next) => {
   try {
     const report = await getLimitsReport(req.query);
@@ -75,6 +142,14 @@ app.get('/api/limits.xlsx', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.get('/api/scans/:scanId/limits.xlsx', (req, res) => {
+  const report = completedScanReport(req.params.scanId, res);
+  if (!report) return;
+  res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="oci-service-limits.xlsx"');
+  res.send(reportToXlsx(report));
 });
 
 app.get('/api/options/regions', async (req, res, next) => {
@@ -121,10 +196,87 @@ app.use((error, req, res, next) => {
   });
 });
 
+async function createScanJob(rawQuery) {
+  cleanupScanJobs();
+  const context = await getOciContext();
+  const query = normalizeLimitsQuery(rawQuery, config, context.tenancyId);
+  const scanId = scanIdFrom(rawQuery.scanId) || randomUUID();
+  const createdAt = new Date().toISOString();
+  const job = {
+    scanId,
+    status: 'queued',
+    createdAt,
+    updatedAt: createdAt,
+    completedAt: '',
+    query: scanQuerySummary(query),
+    progress: {
+      scanId,
+      phase: 'queued',
+      message: 'Scan queued',
+      percent: 0,
+      done: false,
+      failed: false,
+      createdAt,
+      updatedAt: createdAt
+    },
+    result: null,
+    error: null,
+    cached: false
+  };
+
+  scanJobs.set(scanId, job);
+  latestScanId = scanId;
+  updateScanProgress(scanId, job.progress);
+  job.promise = runScanJob(job, context, query);
+  job.promise.catch(() => {});
+  return job;
+}
+
+async function runScanJob(job, context, query) {
+  job.status = 'running';
+  touchScanJob(job);
+
+  try {
+    const report = await getLimitsReportForQuery(context, query, job.scanId);
+    job.status = 'complete';
+    job.result = report;
+    job.cached = Boolean(scanProgress.get(job.scanId)?.cached);
+    job.completedAt = new Date().toISOString();
+    updateScanProgress(job.scanId, {
+      phase: 'complete',
+      message: job.cached ? 'Loaded cached scan result' : 'Scan complete',
+      percent: 100,
+      done: true,
+      failed: false,
+      rows: report.rows?.length || 0,
+      errors: report.errors?.length || 0
+    });
+  } catch (error) {
+    job.status = 'failed';
+    job.error = {
+      message: error.message || 'Scan failed',
+      statusCode: error.statusCode || error.status || 500
+    };
+    job.completedAt = new Date().toISOString();
+    updateScanProgress(job.scanId, {
+      phase: 'failed',
+      message: job.error.message,
+      percent: 100,
+      done: true,
+      failed: true
+    });
+  } finally {
+    touchScanJob(job);
+  }
+}
+
 async function getLimitsReport(rawQuery, options = {}) {
   const context = await getOciContext();
   const query = normalizeLimitsQuery(rawQuery, config, context.tenancyId);
-  const scanId = options.scanId || '';
+  return getLimitsReportForQuery(context, query, options.scanId || '');
+}
+
+async function getLimitsReportForQuery(context, query, scanId = '') {
   const { refresh, ...cacheableQuery } = query;
   const cacheKey = JSON.stringify(cacheableQuery);
   if (!query.refresh) {
@@ -191,19 +343,93 @@ function updateScanProgress(scanId, update) {
     scanId,
     createdAt: new Date().toISOString()
   };
-  scanProgress.set(scanId, {
+  const nextProgress = {
     ...previous,
     ...update,
     scanId,
     updatedAt: new Date().toISOString()
-  });
+  };
+  scanProgress.set(scanId, nextProgress);
+
+  const job = scanJobs.get(scanId);
+  if (job) {
+    job.progress = nextProgress;
+    job.cached = Boolean(nextProgress.cached);
+    touchScanJob(job);
+  }
 }
 
-function cleanupScanProgress() {
-  const cutoff = Date.now() - scanProgressTtlMs;
+function scanJobFrom(value) {
+  const scanId = scanIdFrom(value);
+  return scanId ? scanJobs.get(scanId) : undefined;
+}
+
+function latestScanJob() {
+  if (latestScanId && scanJobs.has(latestScanId)) return scanJobs.get(latestScanId);
+  return Array.from(scanJobs.values())
+    .sort((a, b) => Date.parse(b.updatedAt || b.createdAt) - Date.parse(a.updatedAt || a.createdAt))[0];
+}
+
+function completedScanReport(value, res) {
+  cleanupScanJobs();
+  const job = scanJobFrom(value);
+  if (!job) {
+    res.status(404).json({ error: 'Scan job not found' });
+    return null;
+  }
+
+  if (job.status !== 'complete' || !job.result) {
+    res.status(409).json({ error: 'Scan result is not ready', scan: scanJobSummary(job) });
+    return null;
+  }
+
+  return job.result;
+}
+
+function scanJobSummary(job) {
+  return {
+    scanId: job.scanId,
+    status: job.status,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    completedAt: job.completedAt,
+    done: job.status === 'complete' || job.status === 'failed',
+    failed: job.status === 'failed',
+    cached: Boolean(job.cached),
+    hasResult: Boolean(job.result),
+    query: job.query,
+    progress: job.progress,
+    error: job.error
+  };
+}
+
+function touchScanJob(job) {
+  job.updatedAt = new Date().toISOString();
+}
+
+function scanQuerySummary(query) {
+  return {
+    regions: query.regionNames,
+    services: query.serviceNames,
+    limitNames: query.limitNames,
+    limitFilter: query.limitFilter,
+    includeNonReadyRegions: query.includeNonReadyRegions,
+    hasSubscriptionId: Boolean(query.subscriptionId)
+  };
+}
+
+function cleanupScanJobs() {
+  const cutoff = Date.now() - scanJobTtlMs;
+  for (const [scanId, job] of scanJobs.entries()) {
+    const updatedAt = Date.parse(job.updatedAt || job.createdAt || 0);
+    if (job.status !== 'running' && job.status !== 'queued' && (!Number.isFinite(updatedAt) || updatedAt < cutoff)) {
+      scanJobs.delete(scanId);
+    }
+  }
+
   for (const [scanId, progress] of scanProgress.entries()) {
     const updatedAt = Date.parse(progress.updatedAt || progress.createdAt || 0);
-    if (!Number.isFinite(updatedAt) || updatedAt < cutoff) {
+    if (!scanJobs.has(scanId) && (!Number.isFinite(updatedAt) || updatedAt < cutoff)) {
       scanProgress.delete(scanId);
     }
   }

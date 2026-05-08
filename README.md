@@ -38,6 +38,7 @@ The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edi
 - Warning and critical alert policies highlight high used-percent rows.
 - Severity chips let users focus on critical, warning, healthy, or no-data rows.
 - Live scan banner tracks region/service progress, active item, percentage, and elapsed time.
+- Server-owned scan sessions let browser refreshes resume active scans and reload completed results.
 - Summary cards reset while a rescan is running and show total scan time when complete.
 - CSV and Excel downloads are enabled only after a completed scan and honor the latest criteria.
 - Theme selector includes Pastels, Light, Dark, Ocean, Forest, and Sunset.
@@ -136,14 +137,37 @@ Copy `.env.example` to `.env` and adjust the values you need.
 3. Use Include non-ready only when you need regions that are still provisioning or otherwise not `READY`; those regions can return incomplete data or scan errors.
 4. Click Refresh.
 5. Watch the scan banner for progress by region/service, percentage, and elapsed time.
-6. Use table filters, sorting, severity chips, and alert thresholds to narrow the Limits table.
-7. Download CSV or Excel after the scan completes.
+6. If the browser is refreshed during a scan, the page resumes the server-side scan session and continues polling progress.
+7. Use table filters, sorting, severity chips, and alert thresholds to narrow the Limits table.
+8. Download CSV or Excel after the scan completes.
 
 ## API
 
+### `POST /api/scans`
+
+Starts a server-owned scan job and returns a `scanId`. The browser stores this id so refreshes can resume active scans or reload completed results.
+
+Accepts the same scan query parameters as `/api/limits`, plus optional `scanId`.
+
+### `GET /api/scans/:scanId`
+
+Returns scan status, progress, criteria summary, and completion/error metadata.
+
+### `GET /api/scans/:scanId/result`
+
+Returns the completed scan report. If the scan is still running, the endpoint returns `202` with scan metadata.
+
+### `GET /api/scans/:scanId/limits.csv`
+
+Downloads the completed scan result as CSV.
+
+### `GET /api/scans/:scanId/limits.xlsx`
+
+Downloads the completed scan result as an Excel workbook.
+
 ### `GET /api/limits`
 
-Scans or returns cached service-limit data.
+Scans or returns cached service-limit data directly. This endpoint remains available for direct API use, but the browser dashboard uses `/api/scans` so progress and results survive browser refreshes.
 
 Query parameters:
 
@@ -226,3 +250,4 @@ npm test
 - Tune `REGION_CONCURRENCY`, `SERVICE_CONCURRENCY`, and `RESOURCE_AVAILABILITY_CONCURRENCY` carefully. Increasing them blindly can trigger throttling.
 - Use `DEFAULT_SERVICE_NAMES` when you want a focused dashboard instead of a broad tenancy scan every refresh.
 - CSV and Excel downloads use the last completed scan criteria. If the filters change, run Refresh again before downloading.
+- Server-owned scan sessions are held in memory for browser refresh recovery. They survive page reloads, but not a Node.js process restart.

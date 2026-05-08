@@ -65,6 +65,7 @@ const number = new Intl.NumberFormat('en-US');
 const percentNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 const thresholdStorageKey = 'oci-service-limits:usage-thresholds';
 const themeStorageKey = 'oci-service-limits:theme';
+const activeScanStorageKey = 'oci-service-limits:active-scan-id';
 const columnWidthStoragePrefix = 'oci-service-limits:column-widths:';
 const supportedThemes = new Set(['oracle', 'light', 'dark', 'ocean', 'forest', 'sunset']);
 const minimumColumnWidth = 72;
@@ -85,6 +86,7 @@ let currentRegions = [];
 let appMetadata = { version: '0.1.0', profile: 'DEFAULT', authMethod: 'config' };
 let lastScanMetadata = null;
 let activeScanId = '';
+let scanResultLoadingId = '';
 let progressPollTimer = 0;
 let serviceOptionsRequestId = 0;
 let limitOptionsRequestId = 0;
@@ -199,6 +201,11 @@ async function boot() {
   if (config.defaults.limitNames) {
     await loadLimitOptions(config.defaults.limitNames);
   }
+  const restoredScan = await restoreSavedScan();
+  if (restoredScan) {
+    return;
+  }
+
   if (config.defaults.regions || config.defaults.services || config.defaults.limitNames || config.defaults.limitFilter) {
     await loadReport();
   } else {
@@ -323,8 +330,8 @@ function limitOptionsKey() {
 async function loadReport(forceRefresh = false) {
   statusText.textContent = 'Scanning';
   activeScanId = createScanId();
+  saveActiveScanId(activeScanId);
   setScanInProgress(true);
-  startProgressPolling(activeScanId);
   lastScanMetadata = { scanning: true };
   renderFooter();
   clearTables();
@@ -334,13 +341,84 @@ async function loadReport(forceRefresh = false) {
   const scanCriteriaVersion = criteriaVersion;
   requestParams.set('scanId', activeScanId);
   if (forceRefresh) requestParams.set('refresh', 'true');
-  const response = await fetch(`/api/limits?${requestParams}`);
+  const response = await fetch(`/api/scans?${requestParams}`, { method: 'POST' });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.detail || body.error || 'Limits request failed');
-  renderReport(body, downloadParams, criteriaVersion === scanCriteriaVersion);
+  if (!response.ok) throw new Error(body.detail || body.error || 'Scan request failed');
+  activeScanId = body.scanId || activeScanId;
+  saveActiveScanId(activeScanId);
+  await handleScanJob(body, scanCriteriaVersion);
 }
 
-function renderReport(report, downloadParams = new URLSearchParams(new FormData(form)), downloadsCurrent = true) {
+async function restoreSavedScan() {
+  const savedScanId = loadActiveScanId();
+  if (!savedScanId) return false;
+
+  const response = await fetch(`/api/scans/${encodeURIComponent(savedScanId)}`);
+  if (response.status === 404) {
+    clearActiveScanId();
+    return false;
+  }
+
+  const job = await response.json();
+  if (!response.ok) {
+    clearActiveScanId();
+    return false;
+  }
+
+  activeScanId = job.scanId;
+  saveActiveScanId(activeScanId);
+  await handleScanJob(job, criteriaVersion, { restored: true });
+  return true;
+}
+
+async function handleScanJob(job, scanCriteriaVersion = criteriaVersion, { restored = false } = {}) {
+  if (!job?.scanId) return;
+
+  activeScanId = job.scanId;
+  saveActiveScanId(activeScanId);
+
+  if (job.status === 'complete' && job.hasResult) {
+    stopProgressPolling();
+    await loadScanResult(job.scanId, criteriaVersion === scanCriteriaVersion);
+    return;
+  }
+
+  if (job.status === 'failed') {
+    stopProgressPolling();
+    const error = new Error(job.error?.message || job.progress?.message || 'Scan failed');
+    showError(error);
+    return;
+  }
+
+  statusText.textContent = restored ? 'Resuming scan' : 'Scanning';
+  setScanInProgress(true);
+  lastScanMetadata = { scanning: true };
+  renderFooter();
+  if (!restored) clearTables();
+  disableDownloads('Scan in progress');
+  updateScanProgressDisplay(job.progress || { percent: 1, message: 'Preparing scan' });
+  startProgressPolling(job.scanId, scanCriteriaVersion);
+}
+
+async function loadScanResult(scanId, downloadsCurrent = true) {
+  if (!scanId || scanResultLoadingId === scanId) return;
+  scanResultLoadingId = scanId;
+
+  try {
+    const response = await fetch(`/api/scans/${encodeURIComponent(scanId)}/result`);
+    const body = await response.json();
+    if (response.status === 202) {
+      updateScanProgressDisplay(body.progress || body.scan?.progress);
+      return;
+    }
+    if (!response.ok) throw new Error(body.detail || body.error || 'Scan result request failed');
+    renderReport(body, new URLSearchParams(new FormData(form)), downloadsCurrent, scanId);
+  } finally {
+    scanResultLoadingId = '';
+  }
+}
+
+function renderReport(report, downloadParams = new URLSearchParams(new FormData(form)), downloadsCurrent = true, scanId = '') {
   currentRows = report.rows || [];
   currentRegions = report.regions || [];
   populateColumnFilters(currentRows);
@@ -369,7 +447,11 @@ function renderReport(report, downloadParams = new URLSearchParams(new FormData(
   const generated = new Date(report.generatedAt).toLocaleString();
   statusText.textContent = `${number.format(report.totals.selectedRegions || 0)} selected, generated ${generated}`;
   if (downloadsCurrent) {
-    enableDownloads(downloadParams);
+    if (scanId) {
+      enableDownloadsForScan(scanId);
+    } else {
+      enableDownloads(downloadParams);
+    }
   } else {
     disableDownloads('Criteria changed during scan. Refresh again before downloading.');
   }
@@ -1112,11 +1194,11 @@ function setScanInProgress(isScanning) {
   statusText.classList.toggle('status-scanning', isScanning);
 }
 
-function startProgressPolling(scanId) {
+function startProgressPolling(scanId, scanCriteriaVersion = criteriaVersion) {
   stopProgressPolling();
-  pollScanProgress(scanId).catch(() => {});
+  pollScanProgress(scanId, scanCriteriaVersion).catch(() => {});
   progressPollTimer = window.setInterval(() => {
-    pollScanProgress(scanId).catch(() => {});
+    pollScanProgress(scanId, scanCriteriaVersion).catch(() => {});
   }, 900);
 }
 
@@ -1126,14 +1208,25 @@ function stopProgressPolling() {
   progressPollTimer = 0;
 }
 
-async function pollScanProgress(scanId) {
+async function pollScanProgress(scanId, scanCriteriaVersion = criteriaVersion) {
   if (!scanId || scanId !== activeScanId) return;
-  const response = await fetch(`/api/progress/${encodeURIComponent(scanId)}`);
-  if (response.status === 404) return;
-  const progress = await response.json();
+  const response = await fetch(`/api/scans/${encodeURIComponent(scanId)}`);
+  if (response.status === 404) {
+    clearActiveScanId();
+    stopProgressPolling();
+    return;
+  }
+  const job = await response.json();
   if (!response.ok) return;
-  updateScanProgressDisplay(progress);
-  if (progress.done || progress.failed) stopProgressPolling();
+  if (job.progress) updateScanProgressDisplay(job.progress);
+
+  if (job.status === 'complete' && job.hasResult) {
+    stopProgressPolling();
+    await loadScanResult(scanId, criteriaVersion === scanCriteriaVersion);
+  } else if (job.status === 'failed') {
+    stopProgressPolling();
+    showError(new Error(job.error?.message || job.progress?.message || 'Scan failed'));
+  }
 }
 
 function updateScanProgressDisplay(progress) {
@@ -1178,6 +1271,30 @@ function createScanId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function saveActiveScanId(scanId) {
+  try {
+    window.localStorage.setItem(activeScanStorageKey, scanId);
+  } catch {
+    // Ignore storage failures; the server still owns the scan for this page view.
+  }
+}
+
+function loadActiveScanId() {
+  try {
+    return window.localStorage.getItem(activeScanStorageKey) || '';
+  } catch {
+    return '';
+  }
+}
+
+function clearActiveScanId() {
+  try {
+    window.localStorage.removeItem(activeScanStorageKey);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 function invalidateDownloads() {
   criteriaVersion += 1;
   disableDownloads('Criteria changed. Refresh the scan before downloading.');
@@ -1187,6 +1304,18 @@ function enableDownloads(params) {
   const query = params.toString();
   for (const { element, path, label } of downloadLinks) {
     element.href = query ? `${path}?${query}` : path;
+    element.classList.remove('download-disabled');
+    element.removeAttribute('aria-disabled');
+    element.removeAttribute('tabindex');
+    element.title = `Download completed scan as ${label}`;
+  }
+}
+
+function enableDownloadsForScan(scanId) {
+  const encodedScanId = encodeURIComponent(scanId);
+  for (const { element, label } of downloadLinks) {
+    const extension = label === 'Excel' ? 'xlsx' : 'csv';
+    element.href = `/api/scans/${encodedScanId}/limits.${extension}`;
     element.classList.remove('download-disabled');
     element.removeAttribute('aria-disabled');
     element.removeAttribute('tabindex');
