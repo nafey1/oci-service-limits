@@ -4,9 +4,9 @@ Node.js and Express dashboard for scanning an Oracle Cloud Infrastructure tenanc
 
 ## Screenshot
 
-Real scan output from a focused run against `us-ashburn-1` with Compute, Block Volume, Object Storage, and VCN selected:
+Animated dashboard demo showing scan start, browser refresh, polling resume, and restored results:
 
-![OCI Service Limits dashboard showing filters, summary cards, alert policy, severity chips, row filters, and scan results](docs/images/dashboard-scan-results.png)
+![Animated scan recovery demo showing scan start, browser refresh, polling resume, and restored results](docs/images/scan-recovery-demo.gif)
 
 ## Quick Start
 
@@ -155,8 +155,6 @@ If the browser is refreshed during a scan:
 If the browser is refreshed after a scan completes, the dashboard reloads the completed result and enables CSV/Excel downloads from the scan-owned download endpoints.
 
 This recovery is intentionally in-memory. It survives browser refreshes, but not a Node.js process restart. Restarting the server clears active scan jobs and completed scan-session results.
-
-![Animated scan recovery demo showing scan start, browser refresh, polling resume, and restored results](docs/images/scan-recovery-demo.gif)
 
 ```mermaid
 flowchart LR
