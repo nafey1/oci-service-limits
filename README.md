@@ -2,6 +2,12 @@
 
 Node.js and Express dashboard for scanning an Oracle Cloud Infrastructure tenancy, finding subscribed regions, and listing service limits, current usage, and percent used by region.
 
+## Screenshot
+
+Real scan output from a focused run against `us-ashburn-1` with Compute, Block Volume, Object Storage, and VCN selected:
+
+![OCI Service Limits dashboard showing filters, summary cards, alert policy, severity chips, row filters, and scan results](docs/images/dashboard-scan-results.png)
+
 ## Features
 
 - Authenticates to OCI with config-file auth, instance principals, or resource principals.
