@@ -255,6 +255,35 @@ docker run --rm -p 3000:3000 \
 
 For OCI-hosted deployment, use `OCI_AUTH_METHOD=instance_principal` or `OCI_AUTH_METHOD=resource_principal` and avoid mounting an API key.
 
+### Host Filesystem Mount for Docker Persistence
+
+The dashboard currently keeps scan sessions in memory. A browser refresh can recover the scan, but a container restart clears in-memory scan jobs. For Docker deployments that need persistence across container restarts, mount a host filesystem path and configure the app to use that path for persisted scan state when file-backed scan storage is enabled.
+
+Example host directory:
+
+```bash
+sudo mkdir -p /opt/oci-service-limits/data
+sudo chown "$(id -u):$(id -g)" /opt/oci-service-limits/data
+```
+
+Example container run:
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e OCI_AUTH_METHOD=config \
+  -e OCI_CONFIG_FILE=/home/node/.oci/config \
+  -e OCI_PROFILE=DEFAULT \
+  -e SCAN_STORE=file \
+  -e SCAN_DATA_DIR=/app/data/scans \
+  -v /opt/oci-service-limits/data:/app/data \
+  -v "$HOME/.oci:/home/node/.oci:ro" \
+  oci-service-limits-dashboard
+```
+
+With that mount, files written under `/app/data` in the container are stored under `/opt/oci-service-limits/data` on the host. This model is appropriate for one container on one Docker host. For multiple containers, use a shared external store instead of independent local files.
+
+Kubernetes deployments should use a PersistentVolume and PersistentVolumeClaim for the scan data directory if scan-session persistence must survive pod restarts or rescheduling. Use an access mode and storage backend that matches the deployment model; multiple replicas need storage semantics that safely support concurrent access.
+
 ## Development
 
 ```bash
