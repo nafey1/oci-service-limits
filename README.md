@@ -347,3 +347,18 @@ npm test
 - Use Fast limits only for broad all-region inventory, then Full with usage for alert analysis.
 - CSV and Excel downloads use the last completed scan criteria. If the filters change, run Refresh again before downloading.
 - Server-owned scan sessions are held in memory for browser refresh recovery. They survive page reloads, but not a Node.js process restart.
+
+## Repository Update History
+
+- Added all-region scan acceleration with progressive table rendering, Fast limits only mode, Full with usage mode, region/service-level cache reuse, and background full-cache warming.
+- Moved the animated scan recovery demo to the top Screenshot section.
+- Added an animated scan recovery GIF and a Mermaid flow diagram for scan-session recovery.
+- Documented Docker host filesystem persistence mounts and Kubernetes PersistentVolume/PersistentVolumeClaim guidance.
+- Documented scan refresh recovery behavior and its in-memory limitation.
+- Implemented server-owned scan sessions so browser refreshes can resume active scans and reload completed results.
+- Added Linux server Node.js installation guidance under Requirements.
+- Added README Quick Start and clarified the local run directory.
+- Added repository `AGENTS.md` instructions for future development agents.
+- Added a real dashboard screenshot showing filters, summary cards, alert policy, severity chips, row filters, and scan results.
+- Built the initial Node.js and Express OCI Service Limits dashboard with OCI auth, subscribed-region discovery, multi-select filters, sortable tables, usage enrichment, alert policy controls, themes, and CSV/Excel downloads.
+- Created the initial repository scaffold.
