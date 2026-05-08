@@ -57,6 +57,7 @@ Do not skip this. If IAM is wrong, the dashboard may authenticate successfully a
 ## Local Run
 
 ```bash
+cd OCI-Service-Limts
 cp .env.example .env
 npm install
 npm start
