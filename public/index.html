@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OCI Service Limits</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand-eyebrow">
+        <img class="brand-logo" src="/oracle-logo.svg" alt="" aria-hidden="true">
+        <p class="eyebrow">Oracle Cloud Infrastructure</p>
+      </div>
+      <h1>Service Limits</h1>
+    </div>
+    <div class="downloads">
+      <label class="theme-control" for="themeSelect">
+        Theme
+        <select id="themeSelect">
+          <option value="oracle">Pastels</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="ocean">Ocean</option>
+          <option value="forest">Forest</option>
+          <option value="sunset">Sunset</option>
+        </select>
+      </label>
+      <a class="download download-disabled" id="csvLink" aria-disabled="true" tabindex="-1">CSV</a>
+      <a class="download download-disabled" id="xlsxLink" aria-disabled="true" tabindex="-1">Excel</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <form class="controls" id="limitsForm">
+      <div class="field">
+        <span class="field-label" id="regionsLabel">Regions</span>
+        <div class="multi-select" data-multi-select="regions">
+          <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="regionsLabel regionsSummary">
+            <span id="regionsSummary">Loading</span>
+            <span class="chevron" aria-hidden="true"></span>
+          </button>
+          <div class="multi-menu" hidden>
+            <div class="multi-actions">
+              <button type="button" data-action="all">All</button>
+              <button type="button" data-action="none">None</button>
+            </div>
+            <div class="multi-options" id="regionsOptions" role="listbox" aria-multiselectable="true"></div>
+          </div>
+          <input type="hidden" name="regions">
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label" id="servicesLabel">Services</span>
+        <div class="multi-select" data-multi-select="services">
+          <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="servicesLabel servicesSummary">
+            <span id="servicesSummary">Loading</span>
+            <span class="chevron" aria-hidden="true"></span>
+          </button>
+          <div class="multi-menu" hidden>
+            <div class="multi-actions">
+              <button type="button" data-action="all">All</button>
+              <button type="button" data-action="none">None</button>
+            </div>
+            <div class="multi-options" id="servicesOptions" role="listbox" aria-multiselectable="true"></div>
+          </div>
+          <input type="hidden" name="services">
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label" id="limitsLabel">Limit Name / Description</span>
+        <div class="multi-select" data-multi-select="limits">
+          <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="limitsLabel limitsSummary">
+            <span id="limitsSummary">All Service Limits</span>
+            <span class="chevron" aria-hidden="true"></span>
+          </button>
+          <div class="multi-menu" hidden>
+            <div class="multi-actions">
+              <button type="button" data-action="all">All</button>
+              <button type="button" data-action="none">None</button>
+            </div>
+            <div class="multi-options" id="limitsOptions" role="listbox" aria-multiselectable="true"></div>
+          </div>
+          <input type="hidden" name="limitNames">
+        </div>
+      </div>
+      <label>
+        Subscription
+        <input name="subscriptionId" placeholder="optional OCID">
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="includeNonReadyRegions" value="true">
+        <span>Include non-ready</span>
+        <span class="tooltip" tabindex="0" aria-label="Includes subscribed OCI regions that are not READY. These regions may still be provisioning and can return incomplete data or scan errors.">?</span>
+      </label>
+      <button id="refreshButton" type="submit">Refresh</button>
+    </form>
+
+    <section class="scan-banner" id="scanBanner" aria-live="assertive" hidden>
+      <span class="scan-spinner" aria-hidden="true"></span>
+      <div>
+        <strong>Scan in progress</strong>
+        <span id="scanBannerDetail">Scanning OCI subscribed regions, service limits, and usage.</span>
+        <div class="scan-progress" aria-label="Scan progress">
+          <span id="scanProgressFill"></span>
+        </div>
+        <span id="scanProgressText">Preparing scan</span>
+      </div>
+    </section>
+
+    <section class="summary" aria-live="polite">
+      <article>
+        <span>Subscribed</span>
+        <strong id="subscribedRegions">0</strong>
+      </article>
+      <article>
+        <span>Scanned</span>
+        <strong id="scannedRegions">0</strong>
+      </article>
+      <article>
+        <span>Services</span>
+        <strong id="serviceCount">0</strong>
+      </article>
+      <article>
+        <span>Limits</span>
+        <strong id="limitCount">0</strong>
+      </article>
+      <article>
+        <span>Errors</span>
+        <strong id="errorCount">0</strong>
+      </article>
+      <article>
+        <span>Scan Time</span>
+        <strong id="scanElapsed">0 ms</strong>
+      </article>
+    </section>
+
+    <section class="region-section">
+      <div class="section-head">
+        <h2>Summary</h2>
+        <div class="section-actions">
+          <span id="statusText">Loading</span>
+          <button class="secondary-button" id="summaryToggle" type="button" aria-expanded="true" aria-controls="summaryTableWrap">Hide</button>
+        </div>
+      </div>
+      <div class="table-wrap" id="summaryTableWrap">
+        <table data-resizable-table="summary">
+          <thead>
+            <tr>
+              <th><button class="sort-button" type="button" data-table="regions" data-sort="regionName">Region</button></th>
+              <th><button class="sort-button" type="button" data-table="regions" data-sort="regionKey">Key</button></th>
+              <th><button class="sort-button" type="button" data-table="regions" data-sort="status">Status</button></th>
+              <th><button class="sort-button" type="button" data-table="regions" data-sort="serviceCount">Services</button></th>
+              <th><button class="sort-button" type="button" data-table="regions" data-sort="limitCount">Limits</button></th>
+              <th><button class="sort-button" type="button" data-table="regions" data-sort="errorCount">Errors</button></th>
+              <th><button class="sort-button" type="button" data-table="regions" data-sort="elapsedMs">Elapsed</button></th>
+            </tr>
+          </thead>
+          <tbody id="regionRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="limits-section">
+      <div class="section-head table-tools">
+        <h2>Limits</h2>
+        <div class="table-filter">
+          <div class="alert-controls" aria-label="Used percent alert policy">
+            <label class="policy-control" for="alertPolicy">
+              Alert policy
+              <select id="alertPolicy">
+                <option value="custom">Custom</option>
+                <option value="default">Default 75 / 90</option>
+                <option value="conservative">Conservative 60 / 80</option>
+                <option value="aggressive">Aggressive 85 / 95</option>
+              </select>
+            </label>
+            <label class="threshold-control" for="warningThreshold">
+              Warning at or above
+              <span class="threshold-input">
+                <input id="warningThreshold" type="number" min="0" max="90" step="1" value="75">
+                <span>%</span>
+              </span>
+            </label>
+            <label class="threshold-control" for="criticalThreshold">
+              Critical at or above
+              <span class="threshold-input">
+                <input id="criticalThreshold" type="number" min="75" max="100" step="1" value="90">
+                <span>%</span>
+              </span>
+            </label>
+          </div>
+          <div class="severity-chips" aria-label="Used percent severity filter">
+            <button class="severity-chip active" type="button" data-severity-filter="all">All <span data-severity-count="all">0</span></button>
+            <button class="severity-chip critical" type="button" data-severity-filter="critical">Critical <span data-severity-count="critical">0</span></button>
+            <button class="severity-chip warning" type="button" data-severity-filter="warning">Warning <span data-severity-count="warning">0</span></button>
+            <button class="severity-chip healthy" type="button" data-severity-filter="healthy">Healthy <span data-severity-count="healthy">0</span></button>
+            <button class="severity-chip no-data" type="button" data-severity-filter="no_data">No Data <span data-severity-count="no_data">0</span></button>
+          </div>
+          <span id="limitRowCount">0 rows</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table data-resizable-table="limits">
+          <thead>
+            <tr>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="regionName">Region</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="regionStatus">Status</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="serviceName">Service</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="serviceDescription">Description</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="limitName">Limit</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="value">Limit Value</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="used">Used</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="available">Available</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="percentUsed">Used %</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="scopeType">Scope</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="availabilityDomain">Availability Domain</button></th>
+              <th><button class="sort-button" type="button" data-table="limits" data-sort="usageStatus">Usage</button></th>
+            </tr>
+            <tr class="filter-row">
+              <th>
+                <div class="multi-select column-filter" data-column-filter="regionName">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="regionStatus">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="serviceName">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="serviceDescription">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="limitName">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="value">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="used">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="available">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="percentUsed">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="scopeType">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="availabilityDomain">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+              <th>
+                <div class="multi-select column-filter" data-column-filter="usageStatus">
+                  <button class="multi-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span>All</span><span class="chevron" aria-hidden="true"></span></button>
+                  <div class="multi-menu" hidden><div class="multi-actions"><button type="button" data-action="all">All</button><button type="button" data-action="none">None</button></div><div class="multi-options" role="listbox" aria-multiselectable="true"></div></div>
+                  <input type="hidden">
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="limitRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="errors-section" id="errorsSection" hidden>
+      <div class="section-head">
+        <h2>Errors</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Region</th>
+              <th>Service</th>
+              <th>Status</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="errorRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer" aria-label="Application and scan context">
+    <span><strong>OCI Service Limits Dashboard</strong> <span id="footerVersion">v0.1.0</span></span>
+    <span id="footerScanContext">Last scan: not run</span>
+    <span id="footerScope">Scope: ready subscribed regions</span>
+    <span id="footerSource">Source: OCI Identity and Limits APIs</span>
+    <span id="footerRuntime">Profile: loading</span>
+  </footer>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

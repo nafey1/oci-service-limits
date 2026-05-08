@@ -1,0 +1,25 @@
+{
+  "name": "oci-service-limits-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node.js app that scans OCI subscribed regions and reports service limits by region.",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check public/app.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "oci-common": "^2.131.0",
+    "oci-identity": "^2.131.0",
+    "oci-limits": "^2.131.0"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  }
+}
