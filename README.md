@@ -141,6 +141,21 @@ Copy `.env.example` to `.env` and adjust the values you need.
 7. Use table filters, sorting, severity chips, and alert thresholds to narrow the Limits table.
 8. Download CSV or Excel after the scan completes.
 
+## Scan Sessions and Refresh Recovery
+
+Dashboard scans are server-owned jobs. When a scan starts, the server creates a `scanId` and stores progress, status, errors, and the completed report in memory. The browser stores the active `scanId` in local storage.
+
+If the browser is refreshed during a scan:
+
+- the page reloads the saved `scanId`
+- the UI asks the server for the scan job
+- progress polling resumes from the server-side state
+- when the scan completes, the table reloads from `/api/scans/:scanId/result`
+
+If the browser is refreshed after a scan completes, the dashboard reloads the completed result and enables CSV/Excel downloads from the scan-owned download endpoints.
+
+This recovery is intentionally in-memory. It survives browser refreshes, but not a Node.js process restart. Restarting the server clears active scan jobs and completed scan-session results.
+
 ## API
 
 ### `POST /api/scans`
@@ -152,6 +167,10 @@ Accepts the same scan query parameters as `/api/limits`, plus optional `scanId`.
 ### `GET /api/scans/:scanId`
 
 Returns scan status, progress, criteria summary, and completion/error metadata.
+
+### `GET /api/scans/latest`
+
+Returns the latest active or completed scan job still held in memory.
 
 ### `GET /api/scans/:scanId/result`
 
@@ -180,7 +199,7 @@ Query parameters:
 - `subscriptionId`: optional subscription OCID for subscription-specific limits
 - `tenantId`: optional tenancy OCID override
 - `refresh`: optional boolean to bypass the in-memory cache
-- `scanId`: optional client-generated id used by `/api/progress/:scanId`
+- `scanId`: optional client-generated id used for progress tracking
 
 Example:
 
