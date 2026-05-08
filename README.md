@@ -52,6 +52,26 @@ The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edi
   - Resource principal.
 - OCI IAM policy that allows the running principal to inspect limits and resource availability.
 
+If Node.js is not installed on a Linux server, verify first:
+
+```bash
+node --version
+npm --version
+```
+
+For Ubuntu or Debian servers, install Node.js 22.x with NodeSource:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node --version
+npm --version
+```
+
+For Oracle Linux, RHEL, or other enterprise Linux distributions, install Node.js 20 or newer from your approved OS repository or NodeSource RPM repository, then verify `node --version` and `npm --version` before running the app.
+
 ## OCI Policy
 
 The principal running this app needs tenancy-level permission to inspect limits/resource availability. A narrow starting point is:
