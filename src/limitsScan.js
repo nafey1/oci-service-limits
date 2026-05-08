@@ -35,6 +35,7 @@ const LIMIT_EXPORT_COLUMNS = [
 export async function scanTenancyLimits(provider, config, query, providerRegionId = '', options = {}) {
   const scanStartedAt = Date.now();
   const identityRegion = config.identityRegion || providerRegionId || 'us-ashburn-1';
+  const includeUsage = options.includeUsage !== undefined ? Boolean(options.includeUsage) : query.scanMode !== 'fast';
   const progress = createScanProgressReporter(options.onProgress);
 
   progress.update({
@@ -68,54 +69,52 @@ export async function scanTenancyLimits(provider, config, query, providerRegionI
     skippedRegions: skippedRegions.length
   });
 
+  const completedRegionResults = [];
   const regionResults = await mapWithConcurrency(
     scanRegions,
     config.regionConcurrency,
     async (region) => {
       progress.regionStarted(region);
-      const result = await scanRegion(provider, config, query, region, progress);
+      const result = await scanRegion(provider, config, query, region, progress, {
+        includeUsage,
+        serviceCache: options.serviceCache
+      });
+      completedRegionResults.push(result);
       progress.regionCompleted(result);
+      if (typeof options.onPartialReport === 'function') {
+        options.onPartialReport(buildScanReport({
+          scanStartedAt,
+          query,
+          identityRegion,
+          subscribedRegions,
+          selectedRegions,
+          regionResults: completedRegionResults,
+          skippedRegions,
+          includeUsage,
+          partial: true
+        }));
+      }
       return result;
     }
   );
 
-  const rows = regionResults.flatMap((result) => result.rows);
-  const errors = regionResults.flatMap((result) => result.errors);
-  const regions = [...regionResults.map((result) => result.region), ...skippedRegions]
-    .sort((a, b) => a.regionName.localeCompare(b.regionName));
   progress.complete({
-    rows: rows.length,
-    errors: errors.length,
+    rows: regionResults.flatMap((result) => result.rows).length,
+    errors: regionResults.flatMap((result) => result.errors).length,
     message: 'Scan complete'
   });
 
-  return {
-    generatedAt: new Date().toISOString(),
-    tenancyId: query.tenancyId,
-    compartmentId: query.compartmentId,
+  return buildScanReport({
+    scanStartedAt,
+    query,
     identityRegion,
-    filters: {
-      regions: query.regionNames,
-      services: query.serviceNames,
-      limitNames: query.limitNames,
-      limitFilter: query.limitFilter,
-      subscriptionId: query.subscriptionId,
-      includeNonReadyRegions: query.includeNonReadyRegions
-    },
-    totals: {
-      subscribedRegions: subscribedRegions.length,
-      selectedRegions: selectedRegions.length,
-      scannedRegions: regionResults.length,
-      services: countUnique(rows, (row) => row.serviceName),
-      regionServices: countUnique(rows, (row) => `${row.regionName}:${row.serviceName}`),
-      limits: rows.length,
-      errors: errors.length,
-      scanElapsedMs: Date.now() - scanStartedAt
-    },
-    regions,
-    rows: rows.sort(compareLimitRows),
-    errors
-  };
+    subscribedRegions,
+    selectedRegions,
+    regionResults,
+    skippedRegions,
+    includeUsage,
+    partial: false
+  });
 }
 
 export async function getRegionOptions(provider, config, query, providerRegionId = '') {
@@ -290,7 +289,57 @@ export function reportToXlsx(report) {
   });
 }
 
-async function scanRegion(provider, config, query, region, progress) {
+function buildScanReport({
+  scanStartedAt,
+  query,
+  identityRegion,
+  subscribedRegions,
+  selectedRegions,
+  regionResults,
+  skippedRegions,
+  includeUsage,
+  partial
+}) {
+  const rows = regionResults.flatMap((result) => result.rows);
+  const errors = regionResults.flatMap((result) => result.errors);
+  const regions = [...regionResults.map((result) => result.region), ...skippedRegions]
+    .sort((a, b) => a.regionName.localeCompare(b.regionName));
+  const cachedServices = regionResults.reduce((total, result) => total + (result.region.cachedServiceCount || 0), 0);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    tenancyId: query.tenancyId,
+    compartmentId: query.compartmentId,
+    identityRegion,
+    partial: Boolean(partial),
+    filters: {
+      regions: query.regionNames,
+      services: query.serviceNames,
+      limitNames: query.limitNames,
+      limitFilter: query.limitFilter,
+      subscriptionId: query.subscriptionId,
+      includeNonReadyRegions: query.includeNonReadyRegions,
+      scanMode: query.scanMode
+    },
+    totals: {
+      subscribedRegions: subscribedRegions.length,
+      selectedRegions: selectedRegions.length,
+      scannedRegions: regionResults.length,
+      services: countUnique(rows, (row) => row.serviceName),
+      regionServices: countUnique(rows, (row) => `${row.regionName}:${row.serviceName}`),
+      limits: rows.length,
+      errors: errors.length,
+      cachedServices,
+      usageEnriched: Boolean(includeUsage),
+      scanElapsedMs: Date.now() - scanStartedAt
+    },
+    regions,
+    rows: rows.sort(compareLimitRows),
+    errors
+  };
+}
+
+async function scanRegion(provider, config, query, region, progress, scanOptions = {}) {
   const limitsClient = createLimitsClient(provider, region.regionName);
   const startedAt = Date.now();
 
@@ -303,7 +352,7 @@ async function scanRegion(provider, config, query, region, progress) {
       config.serviceConcurrency,
       async (service) => {
         progress.serviceStarted(region, service);
-        const result = await scanService(limitsClient, config, query, region, service);
+        const result = await scanService(limitsClient, config, query, region, service, scanOptions);
         progress.serviceCompleted(region, service, result);
         return result;
       }
@@ -319,6 +368,7 @@ async function scanRegion(provider, config, query, region, progress) {
         serviceCount,
         limitCount: rows.length,
         errorCount: errors.length,
+        cachedServiceCount: serviceResults.filter((result) => result.cached).length,
         elapsedMs: Date.now() - startedAt,
         message: errors.length ? `${errors.length} service scans failed` : ''
       },
@@ -348,41 +398,54 @@ async function scanRegion(provider, config, query, region, progress) {
   }
 }
 
-async function scanService(limitsClient, config, query, region, service) {
+async function scanService(limitsClient, config, query, region, service, scanOptions = {}) {
+  const includeUsage = scanOptions.includeUsage !== undefined ? Boolean(scanOptions.includeUsage) : query.scanMode !== 'fast';
+  const serviceCache = scanOptions.serviceCache;
+  const cacheKey = serviceScanCacheKey(query, region, service, includeUsage);
+  const cached = serviceCache?.get(cacheKey);
+  if (cached) {
+    return {
+      rows: cloneRows(cached.rows),
+      cached: true
+    };
+  }
+  if (!includeUsage) {
+    const fullCached = serviceCache?.get(serviceScanCacheKey(query, region, service, true));
+    if (fullCached) {
+      return {
+        rows: cloneRows(fullCached.rows),
+        cached: true
+      };
+    }
+  }
+
   try {
-    const [limitValues, limitDefinitions] = await Promise.all([
-      listLimitValues(
-        limitsClient,
-        query.compartmentId,
-        service.name,
-        config.pageSize,
-        query.subscriptionId
-      ),
-      listLimitDefinitions(
-        limitsClient,
-        query.compartmentId,
-        service.name,
-        config.pageSize,
-        query.subscriptionId
+    const fastCacheKey = serviceScanCacheKey(query, region, service, false);
+    const fastCached = includeUsage ? serviceCache?.get(fastCacheKey) : null;
+    const rows = fastCached
+      ? cloneRows(fastCached.rows).map(markUsagePending)
+      : await loadServiceLimitRows(limitsClient, config, query, region, service);
+    const resultRows = includeUsage
+      ? await mapWithConcurrency(
+        rows.map(markUsagePending),
+        config.resourceAvailabilityConcurrency,
+        (row) => enrichLimitRowWithUsage(limitsClient, row, query.subscriptionId)
       )
-    ]);
-    const definitionsByName = new Map(limitDefinitions.map((definition) => [definition.name, definition]));
-    const rows = filterLimitRows(
-      limitValues.map((limitValue) => buildLimitRow(region, service, limitValue, definitionsByName, query)),
-      query
-    );
-    const rowsWithUsage = await mapWithConcurrency(
-      rows,
-      config.resourceAvailabilityConcurrency,
-      (row) => enrichLimitRowWithUsage(limitsClient, row, query.subscriptionId)
-    );
+      : rows.map(markUsageDeferred);
+
+    serviceCache?.set(cacheKey, { rows: cloneRows(resultRows) });
+    if (!includeUsage && !fastCached) {
+      serviceCache?.set(fastCacheKey, { rows: cloneRows(resultRows) });
+    }
 
     return {
-      rows: rowsWithUsage
+      rows: resultRows,
+      cached: false
     };
   } catch (error) {
     return {
       rows: [],
+      cached: false,
       error: {
         regionName: region.regionName,
         regionKey: region.regionKey,
@@ -392,6 +455,30 @@ async function scanService(limitsClient, config, query, region, service) {
       }
     };
   }
+}
+
+async function loadServiceLimitRows(limitsClient, config, query, region, service) {
+  const [limitValues, limitDefinitions] = await Promise.all([
+    listLimitValues(
+      limitsClient,
+      query.compartmentId,
+      service.name,
+      config.pageSize,
+      query.subscriptionId
+    ),
+    listLimitDefinitions(
+      limitsClient,
+      query.compartmentId,
+      service.name,
+      config.pageSize,
+      query.subscriptionId
+    )
+  ]);
+  const definitionsByName = new Map(limitDefinitions.map((definition) => [definition.name, definition]));
+  return filterLimitRows(
+    limitValues.map((limitValue) => buildLimitRow(region, service, limitValue, definitionsByName, query)),
+    query
+  );
 }
 
 async function getServiceLimitOptions(limitsClient, config, query, region, service) {
@@ -456,6 +543,18 @@ function buildLimitRow(region, service, limitValue, definitionsByName, query) {
   };
 }
 
+function markUsageDeferred(row) {
+  return row.resourceAvailabilitySupported
+    ? { ...row, usageStatus: 'deferred', used: undefined, available: undefined, effectiveLimit: undefined, percentUsed: undefined, usageError: '' }
+    : { ...row };
+}
+
+function markUsagePending(row) {
+  return row.resourceAvailabilitySupported
+    ? { ...row, usageStatus: 'pending', used: undefined, available: undefined, effectiveLimit: undefined, percentUsed: undefined, usageError: '' }
+    : { ...row };
+}
+
 async function enrichLimitRowWithUsage(limitsClient, row, subscriptionId) {
   if (!row.resourceAvailabilitySupported) {
     return row;
@@ -481,6 +580,23 @@ async function enrichLimitRowWithUsage(limitsClient, row, subscriptionId) {
       usageError: formatError(error)
     };
   }
+}
+
+function serviceScanCacheKey(query, region, service, includeUsage) {
+  return JSON.stringify({
+    tenancyId: query.tenancyId,
+    compartmentId: query.compartmentId,
+    subscriptionId: query.subscriptionId,
+    regionName: region.regionName,
+    serviceName: service.name,
+    limitNames: [...(query.limitNames || [])].sort(),
+    limitFilter: query.limitFilter,
+    includeUsage: Boolean(includeUsage)
+  });
+}
+
+function cloneRows(rows) {
+  return (rows || []).map((row) => ({ ...row }));
 }
 
 function filterRegions(regions, regionNames) {
@@ -526,6 +642,7 @@ function createScanProgressReporter(onProgress) {
     skippedRegions: 0,
     totalServices: 0,
     completedServices: 0,
+    cachedServices: 0,
     rows: 0,
     errors: 0,
     currentRegion: '',
@@ -579,12 +696,16 @@ function createScanProgressReporter(onProgress) {
         message: `${region.regionName}: scanning ${service.name}`
       });
     },
-    serviceCompleted(region, service) {
+    serviceCompleted(region, service, result = {}) {
       state.completedServices += 1;
+      if (result.cached) state.cachedServices += 1;
       emit({
         currentRegion: region.regionName,
         currentService: service.name,
-        message: `${region.regionName}: completed ${service.name}`
+        cachedServices: state.cachedServices,
+        message: result.cached
+          ? `${region.regionName}: reused cached ${service.name}`
+          : `${region.regionName}: completed ${service.name}`
       });
     },
     regionCompleted(result) {

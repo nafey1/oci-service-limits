@@ -307,7 +307,7 @@ button:hover {
 
 .controls {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(200px, 1fr) minmax(220px, 1fr) minmax(220px, 1.2fr) auto auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(200px, 1fr) minmax(220px, 1fr) minmax(150px, 0.75fr) minmax(220px, 1.2fr) auto auto;
   gap: 12px;
   align-items: end;
   padding: 16px;

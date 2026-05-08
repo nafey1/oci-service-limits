@@ -26,6 +26,7 @@ const severityFilterButtons = Array.from(document.querySelectorAll('[data-severi
 const severityCountEls = Object.fromEntries(
   Array.from(document.querySelectorAll('[data-severity-count]')).map((element) => [element.dataset.severityCount, element])
 );
+const scanModeSelect = form.elements.scanMode;
 const subscriptionInput = form.elements.subscriptionId;
 const includeNonReadyInput = form.elements.includeNonReadyRegions;
 const regionSelect = createMultiSelect({
@@ -87,6 +88,7 @@ let appMetadata = { version: '0.1.0', profile: 'DEFAULT', authMethod: 'config' }
 let lastScanMetadata = null;
 let activeScanId = '';
 let scanResultLoadingId = '';
+let lastPartialRenderKey = '';
 let progressPollTimer = 0;
 let serviceOptionsRequestId = 0;
 let limitOptionsRequestId = 0;
@@ -133,6 +135,10 @@ includeNonReadyInput.addEventListener('change', () => {
   invalidateDownloads();
   resetLimitOptions();
   refreshServiceOptions().catch(showError);
+});
+
+scanModeSelect.addEventListener('change', () => {
+  invalidateDownloads();
 });
 
 disableDownloads('Run a scan to enable downloads');
@@ -223,6 +229,7 @@ async function loadDefaults() {
     authMethod: config.authMethod || appMetadata.authMethod
   };
   subscriptionInput.value = config.defaults.subscriptionId || '';
+  scanModeSelect.value = config.defaults.scanMode || 'full';
   includeNonReadyInput.checked = Boolean(config.includeNonReadyRegions);
   renderFooter();
   return config;
@@ -330,6 +337,7 @@ function limitOptionsKey() {
 async function loadReport(forceRefresh = false) {
   statusText.textContent = 'Scanning';
   activeScanId = createScanId();
+  lastPartialRenderKey = '';
   saveActiveScanId(activeScanId);
   setScanInProgress(true);
   lastScanMetadata = { scanning: true };
@@ -397,12 +405,16 @@ async function handleScanJob(job, scanCriteriaVersion = criteriaVersion, { resto
   if (!restored) clearTables();
   disableDownloads('Scan in progress');
   updateScanProgressDisplay(job.progress || { percent: 1, message: 'Preparing scan' });
+  if (job.hasPartialResult) {
+    await loadScanResult(job.scanId, false, { allowPartial: true });
+  }
   startProgressPolling(job.scanId, scanCriteriaVersion);
 }
 
-async function loadScanResult(scanId, downloadsCurrent = true) {
-  if (!scanId || scanResultLoadingId === scanId) return;
-  scanResultLoadingId = scanId;
+async function loadScanResult(scanId, downloadsCurrent = true, { allowPartial = false } = {}) {
+  const loadingKey = `${scanId}:${allowPartial ? 'partial' : 'final'}`;
+  if (!scanId || scanResultLoadingId === loadingKey) return;
+  scanResultLoadingId = loadingKey;
 
   try {
     const response = await fetch(`/api/scans/${encodeURIComponent(scanId)}/result`);
@@ -412,13 +424,27 @@ async function loadScanResult(scanId, downloadsCurrent = true) {
       return;
     }
     if (!response.ok) throw new Error(body.detail || body.error || 'Scan result request failed');
-    renderReport(body, new URLSearchParams(new FormData(form)), downloadsCurrent, scanId);
+    if (body.partial && !allowPartial) return;
+    renderReport(body, new URLSearchParams(new FormData(form)), downloadsCurrent, scanId, {
+      partial: Boolean(body.partial)
+    });
   } finally {
     scanResultLoadingId = '';
   }
 }
 
-function renderReport(report, downloadParams = new URLSearchParams(new FormData(form)), downloadsCurrent = true, scanId = '') {
+function renderReport(report, downloadParams = new URLSearchParams(new FormData(form)), downloadsCurrent = true, scanId = '', { partial = false } = {}) {
+  const partialRenderKey = partial
+    ? [
+      report.totals?.scannedRegions || 0,
+      report.totals?.limits || 0,
+      report.totals?.errors || 0,
+      report.totals?.cachedServices || 0
+    ].join(':')
+    : '';
+  if (partial && partialRenderKey === lastPartialRenderKey) return;
+  if (partial) lastPartialRenderKey = partialRenderKey;
+
   currentRows = report.rows || [];
   currentRegions = report.regions || [];
   populateColumnFilters(currentRows);
@@ -438,9 +464,24 @@ function renderReport(report, downloadParams = new URLSearchParams(new FormData(
     scannedRegions: report.totals.scannedRegions || 0,
     services: report.totals.services || 0,
     limits: report.totals.limits || 0,
+    scanMode: report.filters?.scanMode || scanModeSelect.value,
+    cachedServices: report.totals.cachedServices || 0,
     includeNonReadyRegions: includeNonReadyInput.checked
   };
   renderFooter();
+
+  if (partial) {
+    lastScanMetadata = { scanning: true };
+    renderFooter();
+    const scanned = number.format(report.totals.scannedRegions || 0);
+    const selected = number.format(report.totals.selectedRegions || 0);
+    const cached = report.totals.cachedServices ? `, ${number.format(report.totals.cachedServices)} services from cache` : '';
+    statusText.textContent = `${scanned} of ${selected} regions rendered${cached}`;
+    disableDownloads('Scan in progress');
+    return;
+  }
+
+  lastPartialRenderKey = '';
   setScanInProgress(false);
   stopProgressPolling();
 
@@ -540,6 +581,7 @@ function renderErrors(errors) {
 function clearTables() {
   currentRows = [];
   currentRegions = [];
+  lastPartialRenderKey = '';
   clearSummaryPanels();
   resetColumnFilters();
   populateColumnFilters([]);
@@ -579,8 +621,10 @@ function renderFooter() {
     `Scope: ${number.format(lastScanMetadata.scannedRegions)} of ${number.format(lastScanMetadata.selectedRegions)} selected regions`,
     `${number.format(lastScanMetadata.services)} services`,
     `${number.format(lastScanMetadata.limits)} limits`,
+    lastScanMetadata.scanMode === 'fast' ? 'fast limits only' : 'full usage scan',
+    lastScanMetadata.cachedServices ? `${number.format(lastScanMetadata.cachedServices)} cached services` : '',
     lastScanMetadata.includeNonReadyRegions ? 'non-ready included' : 'ready only'
-  ].join(' | ');
+  ].filter(Boolean).join(' | ');
 }
 
 function scopeFooterText() {
@@ -1016,6 +1060,8 @@ function usageStatusLabel(row) {
       return 'Error';
     case 'pending':
       return 'Pending';
+    case 'deferred':
+      return 'Deferred';
     default:
       return '';
   }
@@ -1186,12 +1232,18 @@ function setScanInProgress(isScanning) {
   document.body.classList.toggle('scan-active', isScanning);
   scanBanner.hidden = !isScanning;
   scanBannerDetail.textContent = isScanning
-    ? 'Scanning OCI subscribed regions, service limits, and usage.'
+    ? scanBannerDefaultText()
     : '';
   updateScanProgressDisplay(isScanning ? { percent: 1, message: 'Preparing scan' } : null);
   refreshButton.disabled = isScanning;
   refreshButton.textContent = isScanning ? 'Scanning' : 'Refresh';
   statusText.classList.toggle('status-scanning', isScanning);
+}
+
+function scanBannerDefaultText() {
+  return scanModeSelect.value === 'fast'
+    ? 'Scanning OCI subscribed regions and service limits. Usage enrichment is skipped for speed.'
+    : 'Scanning OCI subscribed regions, service limits, and usage.';
 }
 
 function startProgressPolling(scanId, scanCriteriaVersion = criteriaVersion) {
@@ -1226,6 +1278,8 @@ async function pollScanProgress(scanId, scanCriteriaVersion = criteriaVersion) {
   } else if (job.status === 'failed') {
     stopProgressPolling();
     showError(new Error(job.error?.message || job.progress?.message || 'Scan failed'));
+  } else if (job.hasPartialResult) {
+    await loadScanResult(scanId, false, { allowPartial: true });
   }
 }
 
@@ -1251,6 +1305,10 @@ function scanProgressSummary(progress, percent) {
 
   if (Number.isFinite(Number(progress.completedServices)) && Number.isFinite(Number(progress.totalServices)) && Number(progress.totalServices) > 0) {
     parts.push(`${number.format(progress.completedServices)} / ${number.format(progress.totalServices)} services`);
+  }
+
+  if (Number(progress.cachedServices) > 0) {
+    parts.push(`${number.format(progress.cachedServices)} cached`);
   }
 
   const startedAt = Date.parse(progress.createdAt || '');

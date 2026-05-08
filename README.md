@@ -8,6 +8,14 @@ Animated dashboard demo showing scan start, browser refresh, polling resume, and
 
 ![Animated scan recovery demo showing scan start, browser refresh, polling resume, and restored results](docs/images/scan-recovery-demo.gif)
 
+## Latest Improvements
+
+- Added all-region scan acceleration with progressive table rendering, region/service-level cache reuse, and a Fast limits only scan mode.
+- Fast scans now skip usage enrichment for speed and can warm the full usage cache in the background for later full scans.
+- Browser refresh recovery keeps active scan progress and completed results available through server-owned scan sessions.
+- Docker persistence guidance now includes host filesystem mounts, with a Kubernetes persistent volume note.
+- README visuals now include an animated dashboard demo at the top and a scan recovery flow diagram in the recovery section.
+
 ## Quick Start
 
 ```bash
@@ -30,6 +38,7 @@ The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edi
 - Multi-select, searchable dropdown filters for regions, services, and limit name/description.
 - Region and service dropdown summaries include counts where available.
 - Home region is prioritized in the Regions filter.
+- Scan Mode supports Full with usage or Fast limits only.
 - Sortable Summary and Limits tables.
 - Row-level multi-select filters in the Limits table.
 - Region-coded rows with light table styling and resizable columns.
@@ -38,6 +47,9 @@ The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edi
 - Warning and critical alert policies highlight high used-percent rows.
 - Severity chips let users focus on critical, warning, healthy, or no-data rows.
 - Live scan banner tracks region/service progress, active item, percentage, and elapsed time.
+- Partial scan results render as regions complete, instead of waiting for the full tenancy scan to finish.
+- Region/service cache reuse reduces repeat scan time while the cache is fresh.
+- Fast scans can trigger a background full scan to warm usage data for later full scans.
 - Server-owned scan sessions let browser refreshes resume active scans and reload completed results.
 - Summary cards reset while a rescan is running and show total scan time when complete.
 - CSV and Excel downloads are enabled only after a completed scan and honor the latest criteria.
@@ -123,23 +135,39 @@ Copy `.env.example` to `.env` and adjust the values you need.
 | `DEFAULT_SERVICE_NAMES` | empty | Comma-separated default service filter. |
 | `DEFAULT_LIMIT_NAMES` | empty | Comma-separated default limit-name filter. |
 | `DEFAULT_LIMIT_FILTER` | empty | Legacy text filter for limit name/description. |
+| `DEFAULT_SCAN_MODE` | `full` | Default scan mode: `full` enriches usage, `fast` lists limits only. |
 | `INCLUDE_NON_READY_REGIONS` | `false` | Include subscribed regions that are not `READY`. |
 | `REGION_CONCURRENCY` | `3` | Number of regions scanned concurrently. |
 | `SERVICE_CONCURRENCY` | `6` | Number of services scanned concurrently per region. |
 | `RESOURCE_AVAILABILITY_CONCURRENCY` | `2` | Concurrent usage lookups. Keep this conservative. |
 | `OCI_PAGE_SIZE` | `1000` | OCI list page size. |
-| `CACHE_TTL_SECONDS` | `300` | In-memory report cache TTL. |
+| `CACHE_TTL_SECONDS` | `300` | In-memory report and region/service cache TTL. |
+| `BACKGROUND_FULL_SCAN_ON_FAST` | `true` | After a fast scan, warm the full usage cache in the background. |
 
 ## Dashboard Workflow
 
 1. Select regions, services, and optional limit names/descriptions from the searchable multi-select filters.
-2. Optionally enter a subscription OCID.
-3. Use Include non-ready only when you need regions that are still provisioning or otherwise not `READY`; those regions can return incomplete data or scan errors.
-4. Click Refresh.
-5. Watch the scan banner for progress by region/service, percentage, and elapsed time.
-6. If the browser is refreshed during a scan, the page resumes the server-side scan session and continues polling progress.
-7. Use table filters, sorting, severity chips, and alert thresholds to narrow the Limits table.
-8. Download CSV or Excel after the scan completes.
+2. Choose Full with usage when percent-used data is required, or Fast limits only when you need a quicker tenancy-wide inventory.
+3. Optionally enter a subscription OCID.
+4. Use Include non-ready only when you need regions that are still provisioning or otherwise not `READY`; those regions can return incomplete data or scan errors.
+5. Click Refresh.
+6. Watch the scan banner for progress by region/service, percentage, elapsed time, and cache reuse.
+7. Review partial rows as regions complete; the tables do not wait for every subscribed region to finish.
+8. If the browser is refreshed during a scan, the page resumes the server-side scan session and continues polling progress.
+9. Use table filters, sorting, severity chips, and alert thresholds to narrow the Limits table.
+10. Download CSV or Excel after the scan completes.
+
+## All-Region Scan Performance
+
+Tenancies subscribed to every OCI region can take a long time to scan because each region has its own service catalog, limit values, limit definitions, and optional resource availability calls. The app now uses a practical speed model instead of simply raising concurrency and risking OCI throttling.
+
+- **Progressive rendering:** each completed region updates the Summary and Limits tables while the scan continues.
+- **Region/service cache:** successful service scans are cached by tenancy, compartment, subscription, region, service, limit filters, and scan mode for `CACHE_TTL_SECONDS`.
+- **Fast limits only mode:** skips usage/resource availability calls and returns the limit inventory faster. Supported usage rows show `Deferred` in the Usage column.
+- **Background full cache warming:** when `BACKGROUND_FULL_SCAN_ON_FAST=true`, a completed fast scan starts a detached full usage scan for the same criteria. Later full scans can reuse the warmed cache.
+- **Full with usage mode:** keeps the previous behavior and calculates used, available, effective limit, and percent used when OCI resource availability supports the limit.
+
+For very large tenancies, use Fast limits only for broad exploration, then switch to Full with usage for the regions or services that need alert review. The cache keeps repeat scans from starting over while it is still fresh.
 
 ## Scan Sessions and Refresh Recovery
 
@@ -150,6 +178,7 @@ If the browser is refreshed during a scan:
 - the page reloads the saved `scanId`
 - the UI asks the server for the scan job
 - progress polling resumes from the server-side state
+- any available partial result is rendered again
 - when the scan completes, the table reloads from `/api/scans/:scanId/result`
 
 If the browser is refreshed after a scan completes, the dashboard reloads the completed result and enables CSV/Excel downloads from the scan-owned download endpoints.
@@ -161,6 +190,8 @@ flowchart LR
   A["User clicks Refresh"] --> B["Server creates scanId"]
   B --> C["Browser stores scanId in local storage"]
   B --> D["Server tracks progress and final result"]
+  D --> L["Completed regions create partial snapshots"]
+  L --> M["Tables update while scan continues"]
   D --> E{"Browser refreshed?"}
   E -->|No| F["Continue polling scan job"]
   E -->|Yes| G["Reload saved scanId"]
@@ -189,7 +220,7 @@ Returns the latest active or completed scan job still held in memory.
 
 ### `GET /api/scans/:scanId/result`
 
-Returns the completed scan report. If the scan is still running, the endpoint returns `202` with scan metadata.
+Returns the completed scan report. If the scan is still running and partial region results are available, the endpoint returns `206` with `partial: true`. If no partial result is available yet, it returns `202` with scan metadata.
 
 ### `GET /api/scans/:scanId/limits.csv`
 
@@ -209,6 +240,7 @@ Query parameters:
 - `services`: optional comma-separated OCI Limits service names, for example `compute,block-storage`
 - `limitNames`: optional comma-separated limit names selected from the Limit Name / Description dropdown
 - `limitFilter`: optional legacy text matched against limit name and limit description
+- `scanMode`: optional `full` or `fast`; `full` enriches usage, `fast` lists limits only
 - `includeNonReadyRegions`: optional boolean, defaults to `false`
 - `compartmentId`: optional compartment OCID, defaults to `OCI_LIMITS_COMPARTMENT_OCID` or tenancy OCID
 - `subscriptionId`: optional subscription OCID for subscription-specific limits
@@ -312,5 +344,6 @@ npm test
 - A full scan is roughly region count multiplied by service count, plus resource-availability calls for supported limits.
 - Tune `REGION_CONCURRENCY`, `SERVICE_CONCURRENCY`, and `RESOURCE_AVAILABILITY_CONCURRENCY` carefully. Increasing them blindly can trigger throttling.
 - Use `DEFAULT_SERVICE_NAMES` when you want a focused dashboard instead of a broad tenancy scan every refresh.
+- Use Fast limits only for broad all-region inventory, then Full with usage for alert analysis.
 - CSV and Excel downloads use the last completed scan criteria. If the filters change, run Refresh again before downloading.
 - Server-owned scan sessions are held in memory for browser refresh recovery. They survive page reloads, but not a Node.js process restart.

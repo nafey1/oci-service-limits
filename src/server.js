@@ -9,9 +9,11 @@ import { getLimitOptions, getRegionOptions, getServiceOptions, reportToCsv, repo
 const config = getAppConfig();
 const packageInfo = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const app = express();
-const cache = createTtlCache(config.cacheTtlSeconds);
+const reportCache = createTtlCache(config.cacheTtlSeconds);
+const serviceScanCache = createTtlCache(config.cacheTtlSeconds);
 const scanProgress = new Map();
 const scanJobs = new Map();
+const backgroundWarmups = new Map();
 const scanJobTtlMs = 60 * 60 * 1000;
 
 let latestScanId = '';
@@ -37,6 +39,7 @@ app.get('/api/defaults', async (req, res) => {
     identityRegion: config.identityRegion || context.providerRegionId || 'us-ashburn-1',
     defaults: config.defaults,
     includeNonReadyRegions: config.includeNonReadyRegions,
+    backgroundFullScanOnFast: config.backgroundFullScanOnFast,
     hasTenancyId: Boolean(tenancyId),
     tenancySource: config.tenancyId ? 'OCI_TENANCY_OCID' : 'auth_provider'
   });
@@ -95,6 +98,15 @@ app.get('/api/scans/:scanId/result', (req, res) => {
   }
 
   if (job.status !== 'complete' || !job.result) {
+    if (job.partialResult) {
+      res.status(206).json({
+        ...job.partialResult,
+        partial: true,
+        scan: scanJobSummary(job)
+      });
+      return;
+    }
+
     res.status(202).json(scanJobSummary(job));
     return;
   }
@@ -220,6 +232,7 @@ async function createScanJob(rawQuery) {
       updatedAt: createdAt
     },
     result: null,
+    partialResult: null,
     error: null,
     cached: false
   };
@@ -237,9 +250,15 @@ async function runScanJob(job, context, query) {
   touchScanJob(job);
 
   try {
-    const report = await getLimitsReportForQuery(context, query, job.scanId);
+    const report = await getLimitsReportForQuery(context, query, job.scanId, {
+      onPartialReport: (partialReport) => {
+        job.partialResult = partialReport;
+        touchScanJob(job);
+      }
+    });
     job.status = 'complete';
     job.result = report;
+    job.partialResult = null;
     job.cached = Boolean(scanProgress.get(job.scanId)?.cached);
     job.completedAt = new Date().toISOString();
     updateScanProgress(job.scanId, {
@@ -251,6 +270,7 @@ async function runScanJob(job, context, query) {
       rows: report.rows?.length || 0,
       errors: report.errors?.length || 0
     });
+    scheduleBackgroundFullScan(context, query);
   } catch (error) {
     job.status = 'failed';
     job.error = {
@@ -276,11 +296,11 @@ async function getLimitsReport(rawQuery, options = {}) {
   return getLimitsReportForQuery(context, query, options.scanId || '');
 }
 
-async function getLimitsReportForQuery(context, query, scanId = '') {
+async function getLimitsReportForQuery(context, query, scanId = '', options = {}) {
   const { refresh, ...cacheableQuery } = query;
   const cacheKey = JSON.stringify(cacheableQuery);
   if (!query.refresh) {
-    const cached = cache.get(cacheKey);
+    const cached = reportCache.get(cacheKey);
     if (cached) {
       updateScanProgress(scanId, {
         phase: 'complete',
@@ -306,7 +326,10 @@ async function getLimitsReportForQuery(context, query, scanId = '') {
 
   try {
     const report = await scanTenancyLimits(context.provider, config, query, context.providerRegionId, {
-      onProgress: (progress) => updateScanProgress(scanId, progress)
+      includeUsage: query.scanMode !== 'fast',
+      serviceCache: serviceScanCache,
+      onProgress: (progress) => updateScanProgress(scanId, progress),
+      onPartialReport: options.onPartialReport
     });
     updateScanProgress(scanId, {
       phase: 'complete',
@@ -317,7 +340,7 @@ async function getLimitsReportForQuery(context, query, scanId = '') {
       rows: report.rows?.length || 0,
       errors: report.errors?.length || 0
     });
-    cache.set(cacheKey, report);
+    reportCache.set(cacheKey, report);
     return report;
   } catch (error) {
     updateScanProgress(scanId, {
@@ -397,6 +420,8 @@ function scanJobSummary(job) {
     failed: job.status === 'failed',
     cached: Boolean(job.cached),
     hasResult: Boolean(job.result),
+    hasPartialResult: Boolean(job.partialResult),
+    partialRows: job.partialResult?.rows?.length || 0,
     query: job.query,
     progress: job.progress,
     error: job.error
@@ -413,9 +438,41 @@ function scanQuerySummary(query) {
     services: query.serviceNames,
     limitNames: query.limitNames,
     limitFilter: query.limitFilter,
+    scanMode: query.scanMode,
     includeNonReadyRegions: query.includeNonReadyRegions,
     hasSubscriptionId: Boolean(query.subscriptionId)
   };
+}
+
+function scheduleBackgroundFullScan(context, query) {
+  if (!config.backgroundFullScanOnFast || query.scanMode !== 'fast') return;
+
+  const fullQuery = {
+    ...query,
+    refresh: false,
+    scanMode: 'full'
+  };
+  const { refresh, ...cacheableQuery } = fullQuery;
+  const cacheKey = JSON.stringify(cacheableQuery);
+
+  if (reportCache.get(cacheKey) || backgroundWarmups.has(cacheKey)) return;
+
+  const warmup = scanTenancyLimits(context.provider, config, fullQuery, context.providerRegionId, {
+    includeUsage: true,
+    serviceCache: serviceScanCache
+  })
+    .then((report) => {
+      reportCache.set(cacheKey, report);
+      return report;
+    })
+    .catch((error) => {
+      console.warn(`Background full scan warmup failed: ${error.message || error}`);
+    })
+    .finally(() => {
+      backgroundWarmups.delete(cacheKey);
+    });
+
+  backgroundWarmups.set(cacheKey, warmup);
 }
 
 function cleanupScanJobs() {

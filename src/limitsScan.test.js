@@ -20,9 +20,22 @@ test('normalizeLimitsQuery falls back to inferred tenancy as compartment', () =>
   assert.equal(query.compartmentId, 'ocid1.tenancy.oc1..example');
   assert.equal(query.subscriptionId, 'ocid1.subscription.oc1..example');
   assert.equal(query.limitFilter, 'gpu');
+  assert.equal(query.scanMode, 'full');
   assert.deepEqual(query.regionNames, ['us-ashburn-1']);
   assert.deepEqual(query.serviceNames, ['compute']);
   assert.deepEqual(query.limitNames, ['vm-gpu']);
+});
+
+test('normalizeLimitsQuery accepts fast scan mode', () => {
+  const query = normalizeLimitsQuery({ scanMode: 'fast' }, {
+    tenancyId: 'ocid1.tenancy.oc1..example',
+    compartmentId: '',
+    subscriptionId: '',
+    defaults: { regions: '', services: '', limitNames: '', limitFilter: '', scanMode: 'full' },
+    includeNonReadyRegions: false
+  });
+
+  assert.equal(query.scanMode, 'fast');
 });
 
 test('reportToCsv escapes cells', () => {

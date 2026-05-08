@@ -34,12 +34,14 @@ export function getAppConfig() {
     serviceConcurrency: intEnv('SERVICE_CONCURRENCY', 6, 1),
     resourceAvailabilityConcurrency: intEnv('RESOURCE_AVAILABILITY_CONCURRENCY', 2, 1),
     cacheTtlSeconds: intEnv('CACHE_TTL_SECONDS', 300, 0),
+    backgroundFullScanOnFast: boolEnv('BACKGROUND_FULL_SCAN_ON_FAST', true),
     defaults: {
       regions: env('DEFAULT_REGION_NAMES'),
       services: env('DEFAULT_SERVICE_NAMES'),
       limitNames: env('DEFAULT_LIMIT_NAMES'),
       limitFilter: env('DEFAULT_LIMIT_FILTER'),
-      subscriptionId: env('OCI_SUBSCRIPTION_OCID')
+      subscriptionId: env('OCI_SUBSCRIPTION_OCID'),
+      scanMode: normalizeScanMode(env('DEFAULT_SCAN_MODE', 'full'))
     }
   };
 }
@@ -56,6 +58,7 @@ export function normalizeLimitsQuery(input, config = getAppConfig(), inferredTen
     limitNames: parseList(firstValue(input.limitNames ?? input.limitName ?? input.limit) || config.defaults.limitNames),
     limitFilter: String(firstValue(input.limitFilter) || config.defaults.limitFilter || '').trim(),
     includeNonReadyRegions: parseBoolean(firstValue(input.includeNonReadyRegions), config.includeNonReadyRegions),
+    scanMode: normalizeScanMode(firstValue(input.scanMode) || config.defaults.scanMode || 'full'),
     refresh: parseBoolean(firstValue(input.refresh), false)
   };
 
@@ -91,6 +94,11 @@ export function parseBoolean(value, fallback = false) {
   if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
   return fallback;
+}
+
+export function normalizeScanMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'fast' ? 'fast' : 'full';
 }
 
 function firstValue(value) {
