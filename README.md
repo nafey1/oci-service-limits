@@ -8,6 +8,20 @@ Real scan output from a focused run against `us-ashburn-1` with Compute, Block V
 
 ![OCI Service Limits dashboard showing filters, summary cards, alert policy, severity chips, row filters, and scan results](docs/images/dashboard-scan-results.png)
 
+## Quick Start
+
+```bash
+git clone https://github.com/nafey1/OCI-Service-Limts.git
+cd OCI-Service-Limts
+cp .env.example .env
+npm install
+npm start
+```
+
+Open `http://localhost:3000`.
+
+The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edit `.env` if you need a different OCI profile, auth method, port, or default scan scope.
+
 ## Features
 
 - Authenticates to OCI with config-file auth, instance principals, or resource principals.
