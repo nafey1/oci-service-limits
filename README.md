@@ -156,6 +156,23 @@ If the browser is refreshed after a scan completes, the dashboard reloads the co
 
 This recovery is intentionally in-memory. It survives browser refreshes, but not a Node.js process restart. Restarting the server clears active scan jobs and completed scan-session results.
 
+![Animated scan recovery demo showing scan start, browser refresh, polling resume, and restored results](docs/images/scan-recovery-demo.gif)
+
+```mermaid
+flowchart LR
+  A["User clicks Refresh"] --> B["Server creates scanId"]
+  B --> C["Browser stores scanId in local storage"]
+  B --> D["Server tracks progress and final result"]
+  D --> E{"Browser refreshed?"}
+  E -->|No| F["Continue polling scan job"]
+  E -->|Yes| G["Reload saved scanId"]
+  G --> H["GET /api/scans/:scanId"]
+  F --> I["Scan completes"]
+  H --> I
+  I --> J["GET /api/scans/:scanId/result"]
+  J --> K["Render tables and enable CSV / Excel"]
+```
+
 ## API
 
 ### `POST /api/scans`
