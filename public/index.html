@@ -153,15 +153,14 @@
         <h2>Facts for nerds</h2>
         <div class="section-actions">
           <span id="metricsNote">Scan telemetry from OCI SDK calls and estimated application payloads</span>
-          <button class="secondary-button" id="metricsToggle" type="button" aria-expanded="true" aria-controls="metricsBoard">Hide</button>
+          <button class="secondary-button" id="metricsToggle" type="button" aria-expanded="false" aria-controls="metricsBoard">Show</button>
         </div>
       </div>
-      <div class="metrics-board" id="metricsBoard">
+      <div class="metrics-board" id="metricsBoard" hidden>
         <article class="metric-lead">
           <span>API pulse</span>
           <strong id="metricApiCalls">0</strong>
           <small id="metricOperationCount">0 operations</small>
-          <div class="metric-pulse-line" aria-hidden="true"><span></span></div>
         </article>
 
         <div class="metrics-grid">

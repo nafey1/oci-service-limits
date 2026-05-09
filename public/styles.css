@@ -796,36 +796,6 @@ select {
   position: relative;
 }
 
-.metric-lead::before {
-  background:
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--brand) 44%, transparent) 0 2px, transparent 2px 18px),
-    linear-gradient(90deg, transparent, color-mix(in srgb, var(--teal) 28%, transparent), transparent);
-  bottom: 54px;
-  content: "";
-  height: 1px;
-  left: 12px;
-  opacity: 0.72;
-  position: absolute;
-  right: 12px;
-}
-
-.metric-pulse-line {
-  background: color-mix(in srgb, var(--line) 72%, transparent);
-  border-radius: 999px;
-  height: 8px;
-  margin-top: auto;
-  overflow: hidden;
-}
-
-.metric-pulse-line span {
-  animation: pulse-slide 1.8s ease-in-out infinite;
-  background: linear-gradient(90deg, var(--brand), var(--teal), var(--gold));
-  border-radius: inherit;
-  display: block;
-  height: 100%;
-  width: 44%;
-}
-
 .metrics-grid {
   display: grid;
   gap: 10px;
@@ -1586,17 +1556,6 @@ body.column-resize-active {
 
   50% {
     filter: saturate(1.2) brightness(1.03);
-  }
-}
-
-@keyframes pulse-slide {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-
-  50% {
-    transform: translateX(126%);
   }
 }
 

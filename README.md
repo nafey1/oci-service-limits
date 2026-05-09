@@ -14,7 +14,7 @@ Animated dashboard feature walkthrough showing scan mode selection, progressive 
 - Fast scans now skip usage enrichment for speed and can warm the full usage cache in the background for later full scans.
 - Added a Facts for nerds panel with OCI SDK call counts, estimated payload sizes, latency, cache hits, usage lookups, errors, and the slowest call.
 - Redesigned Facts for nerds as a compact telemetry board with an API pulse, metric tiles, slowest-call detail, and an operation mix chart.
-- Added a hide/show toggle for the Facts for nerds telemetry board.
+- Facts for nerds is collapsed by default behind a show/hide toggle, and the distracting animated API pulse bar was removed.
 - File-backed scan persistence now labels restored reports as loaded from persistence in the dashboard status/footer.
 - Browser refresh recovery keeps active scan progress and completed results available through server-owned scan sessions.
 - Docker persistence guidance now includes host filesystem mounts, with a Kubernetes persistent volume note.
@@ -369,6 +369,7 @@ npm test
 - Added a top restored-persistence notice with generated/saved timestamps, row count, and a Refresh OCI action.
 - Redesigned the Facts for nerds display into a more visual telemetry board with operation mix bars.
 - Added a hide/show control to collapse or expand the Facts for nerds telemetry board.
+- Changed Facts for nerds to stay collapsed by default and removed the animated API pulse bar.
 - Added scan telemetry and a Facts for nerds UI panel for OCI API calls, estimated payload sizes, latency, cache hits, usage lookups, errors, and slowest-call detail.
 - Updated the animated README GIF to highlight scan mode selection, progressive table rendering, cache reuse, alert review, and exports.
 - Added all-region scan acceleration with progressive table rendering, Fast limits only mode, Full with usage mode, region/service-level cache reuse, and background full-cache warming.
