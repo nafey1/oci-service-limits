@@ -38,7 +38,8 @@ const metrics = {
   usageLookups: document.querySelector('#metricUsageLookups'),
   apiErrors: document.querySelector('#metricApiErrors'),
   slowestCall: document.querySelector('#metricSlowestCall'),
-  slowestCallDetail: document.querySelector('#metricSlowestCallDetail')
+  slowestCallDetail: document.querySelector('#metricSlowestCallDetail'),
+  operationMix: document.querySelector('#metricOperationMix')
 };
 const scanModeSelect = form.elements.scanMode;
 const subscriptionInput = form.elements.subscriptionId;
@@ -597,7 +598,7 @@ function renderMetrics(telemetry, totals = {}) {
   if (!telemetry || !Number(telemetry.apiCalls)) {
     metricsSection.hidden = true;
     for (const element of Object.values(metrics)) {
-      element.textContent = '';
+      element.replaceChildren();
     }
     return;
   }
@@ -625,6 +626,41 @@ function renderMetrics(telemetry, totals = {}) {
       slowestCall.statusCode ? `status ${slowestCall.statusCode}` : ''
     ].filter(Boolean).join(' | ')
     : 'No calls measured';
+  renderOperationMix(operations, telemetry.apiCalls || 0);
+}
+
+function renderOperationMix(operations, apiCalls) {
+  metrics.operationMix.replaceChildren();
+  if (!operations.length) {
+    const empty = document.createElement('span');
+    empty.className = 'metric-operation-empty';
+    empty.textContent = 'No operation detail available';
+    metrics.operationMix.appendChild(empty);
+    return;
+  }
+
+  const maxCalls = Math.max(...operations.map((operation) => Number(operation.calls) || 0), 1);
+  for (const operation of operations.slice(0, 5)) {
+    const calls = Number(operation.calls) || 0;
+    const row = document.createElement('div');
+    row.className = 'metric-operation-row';
+
+    const label = document.createElement('span');
+    label.textContent = formatOperationName(operation.operation);
+
+    const detail = document.createElement('small');
+    const percentOfCalls = apiCalls ? Math.round((calls / apiCalls) * 100) : 0;
+    detail.textContent = `${number.format(calls)} ${calls === 1 ? 'call' : 'calls'} | ${percentOfCalls}% | avg ${formatDuration(operation.avgLatencyMs || 0)}`;
+
+    const track = document.createElement('div');
+    track.className = 'metric-operation-track';
+    const fill = document.createElement('span');
+    fill.style.width = `${Math.max(6, Math.round((calls / maxCalls) * 100))}%`;
+    track.appendChild(fill);
+
+    row.append(label, detail, track);
+    metrics.operationMix.appendChild(row);
+  }
 }
 
 function clearTables() {

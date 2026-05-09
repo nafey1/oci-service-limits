@@ -146,48 +146,61 @@
     <section class="metrics-section" id="metricsSection" hidden>
       <div class="section-head">
         <h2>Facts for nerds</h2>
-        <span id="metricsNote">OCI SDK calls and estimated application payload sizes</span>
+        <span id="metricsNote">Scan telemetry from OCI SDK calls and estimated application payloads</span>
       </div>
-      <div class="metrics-grid">
-        <article>
-          <span>OCI API calls</span>
+      <div class="metrics-board">
+        <article class="metric-lead">
+          <span>API pulse</span>
           <strong id="metricApiCalls">0</strong>
           <small id="metricOperationCount">0 operations</small>
+          <div class="metric-pulse-line" aria-hidden="true"><span></span></div>
         </article>
-        <article>
-          <span>Data retrieved</span>
-          <strong id="metricDataReceived">0 B</strong>
-          <small>estimated response payload</small>
-        </article>
-        <article>
-          <span>Data sent</span>
-          <strong id="metricDataSent">0 B</strong>
-          <small>estimated request payload</small>
-        </article>
-        <article>
-          <span>Avg latency</span>
-          <strong id="metricAvgLatency">0 ms</strong>
-          <small id="metricMaxLatency">max 0 ms</small>
-        </article>
-        <article>
-          <span>Cache hits</span>
-          <strong id="metricCacheHits">0</strong>
-          <small>region/service results reused</small>
-        </article>
-        <article>
-          <span>Usage lookups</span>
-          <strong id="metricUsageLookups">0</strong>
-          <small>resource availability calls</small>
-        </article>
-        <article>
-          <span>OCI errors</span>
-          <strong id="metricApiErrors">0</strong>
-          <small>failed SDK operations</small>
-        </article>
-        <article>
+
+        <div class="metrics-grid">
+          <article class="metric-card" data-tone="retrieved">
+            <span>Retrieved</span>
+            <strong id="metricDataReceived">0 B</strong>
+            <small>estimated response payload</small>
+          </article>
+          <article class="metric-card" data-tone="sent">
+            <span>Sent</span>
+            <strong id="metricDataSent">0 B</strong>
+            <small>estimated request payload</small>
+          </article>
+          <article class="metric-card" data-tone="latency">
+            <span>Latency</span>
+            <strong id="metricAvgLatency">0 ms</strong>
+            <small id="metricMaxLatency">max 0 ms</small>
+          </article>
+          <article class="metric-card" data-tone="cache">
+            <span>Cache hits</span>
+            <strong id="metricCacheHits">0</strong>
+            <small>region/service results reused</small>
+          </article>
+          <article class="metric-card" data-tone="usage">
+            <span>Usage lookups</span>
+            <strong id="metricUsageLookups">0</strong>
+            <small>resource availability calls</small>
+          </article>
+          <article class="metric-card" data-tone="errors">
+            <span>OCI errors</span>
+            <strong id="metricApiErrors">0</strong>
+            <small>failed SDK operations</small>
+          </article>
+        </div>
+
+        <article class="metric-slowest">
           <span>Slowest call</span>
           <strong id="metricSlowestCall">None</strong>
           <small id="metricSlowestCallDetail">No calls measured</small>
+        </article>
+
+        <article class="metric-operations">
+          <div>
+            <span>Operation mix</span>
+            <small>calls by SDK operation</small>
+          </div>
+          <div class="metric-operation-list" id="metricOperationMix"></div>
         </article>
       </div>
     </section>

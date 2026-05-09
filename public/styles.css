@@ -719,8 +719,10 @@ select {
 }
 
 .metrics-section {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--panel) 92%, var(--brand)) 0%, color-mix(in srgb, var(--panel) 88%, var(--teal)) 52%, color-mix(in srgb, var(--panel) 90%, var(--gold)) 100%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--panel) 86%, var(--brand)) 0%, color-mix(in srgb, var(--panel) 82%, var(--teal)) 52%, color-mix(in srgb, var(--panel) 86%, var(--gold)) 100%);
   margin: 16px 0;
+  overflow: hidden;
 }
 
 .metrics-section[hidden] {
@@ -736,34 +738,117 @@ select {
   font-size: 0.85rem;
 }
 
-.metrics-grid {
+.metrics-board {
   display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  grid-template-columns: 1.1fr 2fr;
   padding: 14px 18px 18px;
 }
 
-.metrics-grid article {
-  background: color-mix(in srgb, var(--panel) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+.metric-lead,
+.metric-card,
+.metric-slowest,
+.metric-operations {
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
   border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.24);
   min-width: 0;
   padding: 12px;
 }
 
-.metrics-grid span,
-.metrics-grid small {
+.metric-lead {
+  display: flex;
+  flex-direction: column;
+  grid-row: span 2;
+  min-height: 206px;
+  position: relative;
+}
+
+.metric-lead::before {
+  background:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--brand) 44%, transparent) 0 2px, transparent 2px 18px),
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--teal) 28%, transparent), transparent);
+  bottom: 54px;
+  content: "";
+  height: 1px;
+  left: 12px;
+  opacity: 0.72;
+  position: absolute;
+  right: 12px;
+}
+
+.metric-pulse-line {
+  background: color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 999px;
+  height: 8px;
+  margin-top: auto;
+  overflow: hidden;
+}
+
+.metric-pulse-line span {
+  animation: pulse-slide 1.8s ease-in-out infinite;
+  background: linear-gradient(90deg, var(--brand), var(--teal), var(--gold));
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  width: 44%;
+}
+
+.metrics-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metric-card[data-tone="retrieved"] {
+  border-color: color-mix(in srgb, var(--teal) 44%, var(--line));
+}
+
+.metric-card[data-tone="sent"] {
+  border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
+}
+
+.metric-card[data-tone="latency"] {
+  border-color: color-mix(in srgb, var(--gold) 48%, var(--line));
+}
+
+.metric-card[data-tone="cache"] {
+  border-color: color-mix(in srgb, var(--teal) 34%, var(--line));
+}
+
+.metric-card[data-tone="usage"] {
+  border-color: color-mix(in srgb, var(--brand) 34%, var(--line));
+}
+
+.metric-card[data-tone="errors"] {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+}
+
+.metric-lead span,
+.metric-card span,
+.metric-slowest span,
+.metric-operations span,
+.metric-lead small,
+.metric-card small,
+.metric-slowest small,
+.metric-operations small {
   color: var(--muted);
   display: block;
 }
 
-.metrics-grid span {
+.metric-lead span,
+.metric-card span,
+.metric-slowest span,
+.metric-operations span {
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.metrics-grid strong {
+.metric-lead strong,
+.metric-card strong,
+.metric-slowest strong {
   color: var(--ink);
   display: block;
   font-size: 1.35rem;
@@ -774,12 +859,83 @@ select {
   white-space: nowrap;
 }
 
-.metrics-grid small {
+.metrics-section .metric-lead strong {
+  font-size: clamp(3.4rem, 8vw, 5rem);
+  margin-top: 24px;
+}
+
+.metrics-section .metric-lead small {
+  font-size: 0.82rem;
+}
+
+.metric-lead small,
+.metric-card small,
+.metric-slowest small,
+.metric-operations small {
   font-size: 0.76rem;
   margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.metric-slowest {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.metric-operations {
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(150px, 0.35fr) 1fr;
+}
+
+.metric-operation-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.metric-operation-row {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.metric-operation-row > span,
+.metric-operation-row > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-operation-row > span {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.metric-operation-track {
+  background: color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.metric-operation-track span {
+  background: linear-gradient(90deg, var(--brand), var(--teal));
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+.metric-operation-empty {
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .limits-section,
@@ -1366,6 +1522,17 @@ body.column-resize-active {
   }
 }
 
+@keyframes pulse-slide {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  50% {
+    transform: translateX(126%);
+  }
+}
+
 @media (max-width: 980px) {
   .controls {
     grid-template-columns: 1fr 1fr;
@@ -1373,6 +1540,14 @@ body.column-resize-active {
 
   .summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metrics-board {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-lead {
+    min-height: 180px;
   }
 
   .metrics-grid {
@@ -1395,6 +1570,10 @@ body.column-resize-active {
   .controls,
   .summary,
   .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-operations {
     grid-template-columns: 1fr;
   }
 

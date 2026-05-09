@@ -13,6 +13,7 @@ Animated dashboard feature walkthrough showing scan mode selection, progressive 
 - Added all-region scan acceleration with progressive table rendering, region/service-level cache reuse, and a Fast limits only scan mode.
 - Fast scans now skip usage enrichment for speed and can warm the full usage cache in the background for later full scans.
 - Added a Facts for nerds panel with OCI SDK call counts, estimated payload sizes, latency, cache hits, usage lookups, errors, and the slowest call.
+- Redesigned Facts for nerds as a compact telemetry board with an API pulse, metric tiles, slowest-call detail, and an operation mix chart.
 - Browser refresh recovery keeps active scan progress and completed results available through server-owned scan sessions.
 - Docker persistence guidance now includes host filesystem mounts, with a Kubernetes persistent volume note.
 - README visuals now include an animated dashboard feature walkthrough at the top and a scan recovery flow diagram in the recovery section.
@@ -356,6 +357,7 @@ npm test
 
 ## Repository Update History
 
+- Redesigned the Facts for nerds display into a more visual telemetry board with operation mix bars.
 - Added scan telemetry and a Facts for nerds UI panel for OCI API calls, estimated payload sizes, latency, cache hits, usage lookups, errors, and slowest-call detail.
 - Updated the animated README GIF to highlight scan mode selection, progressive table rendering, cache reuse, alert review, and exports.
 - Added all-region scan acceleration with progressive table rendering, Fast limits only mode, Full with usage mode, region/service-level cache reuse, and background full-cache warming.
