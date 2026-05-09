@@ -4,9 +4,9 @@ Node.js and Express dashboard for scanning an Oracle Cloud Infrastructure tenanc
 
 ## Screenshot
 
-Animated dashboard demo showing scan start, browser refresh, polling resume, and restored results:
+Animated dashboard feature walkthrough showing scan mode selection, progressive table rendering, cache reuse, alert review, and exports:
 
-![Animated scan recovery demo showing scan start, browser refresh, polling resume, and restored results](docs/images/scan-recovery-demo.gif)
+![Animated OCI Service Limits dashboard walkthrough showing scan mode, progressive rendering, cached rescans, alerts, and exports](docs/images/scan-recovery-demo.gif)
 
 ## Latest Improvements
 
@@ -14,7 +14,7 @@ Animated dashboard demo showing scan start, browser refresh, polling resume, and
 - Fast scans now skip usage enrichment for speed and can warm the full usage cache in the background for later full scans.
 - Browser refresh recovery keeps active scan progress and completed results available through server-owned scan sessions.
 - Docker persistence guidance now includes host filesystem mounts, with a Kubernetes persistent volume note.
-- README visuals now include an animated dashboard demo at the top and a scan recovery flow diagram in the recovery section.
+- README visuals now include an animated dashboard feature walkthrough at the top and a scan recovery flow diagram in the recovery section.
 
 ## Quick Start
 
@@ -350,6 +350,7 @@ npm test
 
 ## Repository Update History
 
+- Updated the animated README GIF to highlight scan mode selection, progressive table rendering, cache reuse, alert review, and exports.
 - Added all-region scan acceleration with progressive table rendering, Fast limits only mode, Full with usage mode, region/service-level cache reuse, and background full-cache warming.
 - Moved the animated scan recovery demo to the top Screenshot section.
 - Added an animated scan recovery GIF and a Mermaid flow diagram for scan-session recovery.
