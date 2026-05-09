@@ -12,6 +12,7 @@ Animated dashboard feature walkthrough showing scan mode selection, progressive 
 
 - Added all-region scan acceleration with progressive table rendering, region/service-level cache reuse, and a Fast limits only scan mode.
 - Fast scans now skip usage enrichment for speed and can warm the full usage cache in the background for later full scans.
+- Added a Facts for nerds panel with OCI SDK call counts, estimated payload sizes, latency, cache hits, usage lookups, errors, and the slowest call.
 - Browser refresh recovery keeps active scan progress and completed results available through server-owned scan sessions.
 - Docker persistence guidance now includes host filesystem mounts, with a Kubernetes persistent volume note.
 - README visuals now include an animated dashboard feature walkthrough at the top and a scan recovery flow diagram in the recovery section.
@@ -47,6 +48,7 @@ The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edi
 - Warning and critical alert policies highlight high used-percent rows.
 - Severity chips let users focus on critical, warning, healthy, or no-data rows.
 - Live scan banner tracks region/service progress, active item, percentage, and elapsed time.
+- Facts for nerds shows OCI SDK call counts, estimated data sent/retrieved, average and max latency, cache hits, usage lookups, API errors, and slowest call details.
 - Partial scan results render as regions complete, instead of waiting for the full tenancy scan to finish.
 - Region/service cache reuse reduces repeat scan time while the cache is fresh.
 - Fast scans can trigger a background full scan to warm usage data for later full scans.
@@ -169,6 +171,8 @@ Tenancies subscribed to every OCI region can take a long time to scan because ea
 
 For very large tenancies, use Fast limits only for broad exploration, then switch to Full with usage for the regions or services that need alert review. The cache keeps repeat scans from starting over while it is still fresh.
 
+The Facts for nerds panel reports exact SDK operation counts and measured app-side latency. Data sent and data retrieved are application-payload estimates based on the request and response objects handled by the app; they are not exact wire-level network byte counts.
+
 ## Scan Sessions and Refresh Recovery
 
 Dashboard scans are server-owned jobs. When a scan starts, the server creates a `scanId` and stores progress, status, errors, and the completed report in memory. The browser stores the active `scanId` in local storage.
@@ -221,6 +225,8 @@ Returns the latest active or completed scan job still held in memory.
 ### `GET /api/scans/:scanId/result`
 
 Returns the completed scan report. If the scan is still running and partial region results are available, the endpoint returns `206` with `partial: true`. If no partial result is available yet, it returns `202` with scan metadata.
+
+Completed and partial reports include a `telemetry` object with SDK call counts, estimated request/response bytes, operation latency, API error count, operation summaries, and slowest-call detail.
 
 ### `GET /api/scans/:scanId/limits.csv`
 
@@ -350,6 +356,7 @@ npm test
 
 ## Repository Update History
 
+- Added scan telemetry and a Facts for nerds UI panel for OCI API calls, estimated payload sizes, latency, cache hits, usage lookups, errors, and slowest-call detail.
 - Updated the animated README GIF to highlight scan mode selection, progressive table rendering, cache reuse, alert review, and exports.
 - Added all-region scan acceleration with progressive table rendering, Fast limits only mode, Full with usage mode, region/service-level cache reuse, and background full-cache warming.
 - Moved the animated scan recovery demo to the top Screenshot section.

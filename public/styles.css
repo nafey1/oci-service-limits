@@ -658,6 +658,7 @@ select {
 }
 
 .summary article,
+.metrics-section,
 .region-section,
 .limits-section,
 .errors-section {
@@ -715,6 +716,70 @@ select {
   margin-top: 8px;
   font-size: clamp(1.6rem, 3vw, 2.4rem);
   line-height: 1;
+}
+
+.metrics-section {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--panel) 92%, var(--brand)) 0%, color-mix(in srgb, var(--panel) 88%, var(--teal)) 52%, color-mix(in srgb, var(--panel) 90%, var(--gold)) 100%);
+  margin: 16px 0;
+}
+
+.metrics-section[hidden] {
+  display: none;
+}
+
+.metrics-section .section-head {
+  padding: 14px 18px;
+}
+
+#metricsNote {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.metrics-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 14px 18px 18px;
+}
+
+.metrics-grid article {
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.metrics-grid span,
+.metrics-grid small {
+  color: var(--muted);
+  display: block;
+}
+
+.metrics-grid span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.metrics-grid strong {
+  color: var(--ink);
+  display: block;
+  font-size: 1.35rem;
+  line-height: 1.1;
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics-grid small {
+  font-size: 0.76rem;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .limits-section,
@@ -1309,6 +1374,10 @@ body.column-resize-active {
   .summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -1324,7 +1393,8 @@ body.column-resize-active {
   }
 
   .controls,
-  .summary {
+  .summary,
+  .metrics-grid {
     grid-template-columns: 1fr;
   }
 

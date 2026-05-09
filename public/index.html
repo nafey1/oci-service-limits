@@ -143,6 +143,55 @@
       </article>
     </section>
 
+    <section class="metrics-section" id="metricsSection" hidden>
+      <div class="section-head">
+        <h2>Facts for nerds</h2>
+        <span id="metricsNote">OCI SDK calls and estimated application payload sizes</span>
+      </div>
+      <div class="metrics-grid">
+        <article>
+          <span>OCI API calls</span>
+          <strong id="metricApiCalls">0</strong>
+          <small id="metricOperationCount">0 operations</small>
+        </article>
+        <article>
+          <span>Data retrieved</span>
+          <strong id="metricDataReceived">0 B</strong>
+          <small>estimated response payload</small>
+        </article>
+        <article>
+          <span>Data sent</span>
+          <strong id="metricDataSent">0 B</strong>
+          <small>estimated request payload</small>
+        </article>
+        <article>
+          <span>Avg latency</span>
+          <strong id="metricAvgLatency">0 ms</strong>
+          <small id="metricMaxLatency">max 0 ms</small>
+        </article>
+        <article>
+          <span>Cache hits</span>
+          <strong id="metricCacheHits">0</strong>
+          <small>region/service results reused</small>
+        </article>
+        <article>
+          <span>Usage lookups</span>
+          <strong id="metricUsageLookups">0</strong>
+          <small>resource availability calls</small>
+        </article>
+        <article>
+          <span>OCI errors</span>
+          <strong id="metricApiErrors">0</strong>
+          <small>failed SDK operations</small>
+        </article>
+        <article>
+          <span>Slowest call</span>
+          <strong id="metricSlowestCall">None</strong>
+          <small id="metricSlowestCallDetail">No calls measured</small>
+        </article>
+      </div>
+    </section>
+
     <section class="region-section">
       <div class="section-head">
         <h2>Summary</h2>

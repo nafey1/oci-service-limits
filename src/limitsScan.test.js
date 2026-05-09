@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { normalizeLimitsQuery, parseList } from './config.js';
-import { reportToCsv, reportToXlsx } from './limitsScan.js';
+import { createScanTelemetry, reportToCsv, reportToXlsx } from './limitsScan.js';
 
 test('parseList trims comma-separated values', () => {
   assert.deepEqual(parseList(' compute, block-storage ,,vcn '), ['compute', 'block-storage', 'vcn']);
@@ -88,4 +88,50 @@ test('reportToXlsx returns an Excel workbook payload', () => {
   assert.equal(workbook.subarray(0, 2).toString('utf8'), 'PK');
   assert.ok(workbook.includes(Buffer.from('xl/worksheets/sheet1.xml')));
   assert.ok(workbook.includes(Buffer.from('Compute, Bare Metal')));
+});
+
+test('createScanTelemetry summarizes SDK calls', () => {
+  const telemetry = createScanTelemetry();
+  telemetry.record({
+    operation: 'listServices',
+    regionName: 'us-ashburn-1',
+    ok: true,
+    latencyMs: 100,
+    requestBytes: 40,
+    responseBytes: 500
+  });
+  telemetry.record({
+    operation: 'getResourceAvailability',
+    regionName: 'us-ashburn-1',
+    serviceName: 'limits',
+    limitName: 'policy-count',
+    ok: false,
+    statusCode: 429,
+    latencyMs: 250,
+    requestBytes: 80,
+    responseBytes: 60
+  });
+
+  const summary = telemetry.summary();
+
+  assert.equal(summary.apiCalls, 2);
+  assert.equal(summary.apiErrors, 1);
+  assert.equal(summary.requestBytes, 120);
+  assert.equal(summary.responseBytes, 560);
+  assert.equal(summary.avgLatencyMs, 175);
+  assert.equal(summary.maxLatencyMs, 250);
+  assert.equal(summary.byteEstimate, 'application_payload');
+  assert.deepEqual(summary.operations.map((operation) => operation.operation), [
+    'getResourceAvailability',
+    'listServices'
+  ]);
+  assert.deepEqual(summary.slowestCall, {
+    operation: 'getResourceAvailability',
+    regionName: 'us-ashburn-1',
+    serviceName: 'limits',
+    limitName: 'policy-count',
+    statusCode: 429,
+    latencyMs: 250,
+    ok: false
+  });
 });

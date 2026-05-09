@@ -37,6 +37,7 @@ export async function scanTenancyLimits(provider, config, query, providerRegionI
   const identityRegion = config.identityRegion || providerRegionId || 'us-ashburn-1';
   const includeUsage = options.includeUsage !== undefined ? Boolean(options.includeUsage) : query.scanMode !== 'fast';
   const progress = createScanProgressReporter(options.onProgress);
+  const telemetry = createScanTelemetry();
 
   progress.update({
     phase: 'regions',
@@ -45,7 +46,7 @@ export async function scanTenancyLimits(provider, config, query, providerRegionI
   });
 
   const identityClient = createIdentityClient(provider, identityRegion);
-  const subscribedRegions = await listSubscribedRegions(identityClient, query.tenancyId);
+  const subscribedRegions = await listSubscribedRegions(identityClient, query.tenancyId, telemetry);
   const selectedRegions = filterRegions(subscribedRegions, query.regionNames);
   const scanRegions = selectedRegions.filter((region) => {
     return query.includeNonReadyRegions || normalizeStatus(region.status) === READY_STATUS;
@@ -77,7 +78,8 @@ export async function scanTenancyLimits(provider, config, query, providerRegionI
       progress.regionStarted(region);
       const result = await scanRegion(provider, config, query, region, progress, {
         includeUsage,
-        serviceCache: options.serviceCache
+        serviceCache: options.serviceCache,
+        telemetry
       });
       completedRegionResults.push(result);
       progress.regionCompleted(result);
@@ -91,6 +93,7 @@ export async function scanTenancyLimits(provider, config, query, providerRegionI
           regionResults: completedRegionResults,
           skippedRegions,
           includeUsage,
+          telemetry,
           partial: true
         }));
       }
@@ -113,6 +116,7 @@ export async function scanTenancyLimits(provider, config, query, providerRegionI
     regionResults,
     skippedRegions,
     includeUsage,
+    telemetry,
     partial: false
   });
 }
@@ -298,6 +302,7 @@ function buildScanReport({
   regionResults,
   skippedRegions,
   includeUsage,
+  telemetry,
   partial
 }) {
   const rows = regionResults.flatMap((result) => result.rows);
@@ -333,9 +338,101 @@ function buildScanReport({
       usageEnriched: Boolean(includeUsage),
       scanElapsedMs: Date.now() - scanStartedAt
     },
+    telemetry: telemetry?.summary?.() || emptyTelemetrySummary(),
     regions,
     rows: rows.sort(compareLimitRows),
     errors
+  };
+}
+
+export function createScanTelemetry() {
+  const totals = {
+    apiCalls: 0,
+    apiErrors: 0,
+    requestBytes: 0,
+    responseBytes: 0,
+    latencyMs: 0,
+    maxLatencyMs: 0
+  };
+  const operations = new Map();
+  let slowestCall = null;
+
+  return {
+    record(call = {}) {
+      const latencyMs = Math.max(0, Math.round(Number(call.latencyMs) || 0));
+      const requestBytes = Math.max(0, Math.round(Number(call.requestBytes) || 0));
+      const responseBytes = Math.max(0, Math.round(Number(call.responseBytes) || 0));
+      const operation = call.operation || 'unknown';
+      const ok = call.ok !== false;
+
+      totals.apiCalls += 1;
+      totals.apiErrors += ok ? 0 : 1;
+      totals.requestBytes += requestBytes;
+      totals.responseBytes += responseBytes;
+      totals.latencyMs += latencyMs;
+      totals.maxLatencyMs = Math.max(totals.maxLatencyMs, latencyMs);
+
+      const operationTotals = operations.get(operation) || {
+        operation,
+        calls: 0,
+        errors: 0,
+        requestBytes: 0,
+        responseBytes: 0,
+        latencyMs: 0,
+        maxLatencyMs: 0
+      };
+      operationTotals.calls += 1;
+      operationTotals.errors += ok ? 0 : 1;
+      operationTotals.requestBytes += requestBytes;
+      operationTotals.responseBytes += responseBytes;
+      operationTotals.latencyMs += latencyMs;
+      operationTotals.maxLatencyMs = Math.max(operationTotals.maxLatencyMs, latencyMs);
+      operations.set(operation, operationTotals);
+
+      if (!slowestCall || latencyMs > slowestCall.latencyMs) {
+        slowestCall = {
+          operation,
+          regionName: call.regionName || '',
+          serviceName: call.serviceName || '',
+          limitName: call.limitName || '',
+          statusCode: call.statusCode || '',
+          latencyMs,
+          ok
+        };
+      }
+    },
+    summary() {
+      const operationRows = Array.from(operations.values())
+        .map((operation) => ({
+          ...operation,
+          avgLatencyMs: operation.calls ? operation.latencyMs / operation.calls : 0
+        }))
+        .sort((a, b) => b.calls - a.calls || b.latencyMs - a.latencyMs || a.operation.localeCompare(b.operation));
+
+      return {
+        ...totals,
+        avgLatencyMs: totals.apiCalls ? totals.latencyMs / totals.apiCalls : 0,
+        operations: operationRows,
+        slowestCall: slowestCall || null,
+        measuredAt: new Date().toISOString(),
+        byteEstimate: 'application_payload'
+      };
+    }
+  };
+}
+
+function emptyTelemetrySummary() {
+  return {
+    apiCalls: 0,
+    apiErrors: 0,
+    requestBytes: 0,
+    responseBytes: 0,
+    latencyMs: 0,
+    avgLatencyMs: 0,
+    maxLatencyMs: 0,
+    operations: [],
+    slowestCall: null,
+    byteEstimate: 'application_payload'
   };
 }
 
@@ -344,7 +441,13 @@ async function scanRegion(provider, config, query, region, progress, scanOptions
   const startedAt = Date.now();
 
   try {
-    const allServices = await listServices(limitsClient, query.compartmentId, config.pageSize, query.subscriptionId);
+    const allServices = await listServices(
+      limitsClient,
+      query.compartmentId,
+      config.pageSize,
+      query.subscriptionId,
+      scanOptions.telemetry
+    );
     const services = filterServices(allServices, query.serviceNames);
     progress.servicesDiscovered(region, services);
     const serviceResults = await mapWithConcurrency(
@@ -424,12 +527,12 @@ async function scanService(limitsClient, config, query, region, service, scanOpt
     const fastCached = includeUsage ? serviceCache?.get(fastCacheKey) : null;
     const rows = fastCached
       ? cloneRows(fastCached.rows).map(markUsagePending)
-      : await loadServiceLimitRows(limitsClient, config, query, region, service);
+      : await loadServiceLimitRows(limitsClient, config, query, region, service, scanOptions.telemetry);
     const resultRows = includeUsage
       ? await mapWithConcurrency(
         rows.map(markUsagePending),
         config.resourceAvailabilityConcurrency,
-        (row) => enrichLimitRowWithUsage(limitsClient, row, query.subscriptionId)
+        (row) => enrichLimitRowWithUsage(limitsClient, row, query.subscriptionId, scanOptions.telemetry)
       )
       : rows.map(markUsageDeferred);
 
@@ -457,21 +560,23 @@ async function scanService(limitsClient, config, query, region, service, scanOpt
   }
 }
 
-async function loadServiceLimitRows(limitsClient, config, query, region, service) {
+async function loadServiceLimitRows(limitsClient, config, query, region, service, telemetry) {
   const [limitValues, limitDefinitions] = await Promise.all([
     listLimitValues(
       limitsClient,
       query.compartmentId,
       service.name,
       config.pageSize,
-      query.subscriptionId
+      query.subscriptionId,
+      telemetry
     ),
     listLimitDefinitions(
       limitsClient,
       query.compartmentId,
       service.name,
       config.pageSize,
-      query.subscriptionId
+      query.subscriptionId,
+      telemetry
     )
   ]);
   const definitionsByName = new Map(limitDefinitions.map((definition) => [definition.name, definition]));
@@ -555,13 +660,13 @@ function markUsagePending(row) {
     : { ...row };
 }
 
-async function enrichLimitRowWithUsage(limitsClient, row, subscriptionId) {
+async function enrichLimitRowWithUsage(limitsClient, row, subscriptionId, telemetry) {
   if (!row.resourceAvailabilitySupported) {
     return row;
   }
 
   try {
-    const availability = await getResourceAvailability(limitsClient, row, subscriptionId);
+    const availability = await getResourceAvailability(limitsClient, row, subscriptionId, telemetry);
     const used = bestNumber(availability.fractionalUsage, availability.used);
     const available = bestNumber(availability.fractionalAvailability, availability.available);
     const effectiveLimit = bestNumber(availability.effectiveQuotaValue, sumIfNumbers(used, available), row.value);

@@ -26,6 +26,20 @@ const severityFilterButtons = Array.from(document.querySelectorAll('[data-severi
 const severityCountEls = Object.fromEntries(
   Array.from(document.querySelectorAll('[data-severity-count]')).map((element) => [element.dataset.severityCount, element])
 );
+const metricsSection = document.querySelector('#metricsSection');
+const metrics = {
+  apiCalls: document.querySelector('#metricApiCalls'),
+  operationCount: document.querySelector('#metricOperationCount'),
+  dataReceived: document.querySelector('#metricDataReceived'),
+  dataSent: document.querySelector('#metricDataSent'),
+  avgLatency: document.querySelector('#metricAvgLatency'),
+  maxLatency: document.querySelector('#metricMaxLatency'),
+  cacheHits: document.querySelector('#metricCacheHits'),
+  usageLookups: document.querySelector('#metricUsageLookups'),
+  apiErrors: document.querySelector('#metricApiErrors'),
+  slowestCall: document.querySelector('#metricSlowestCall'),
+  slowestCallDetail: document.querySelector('#metricSlowestCallDetail')
+};
 const scanModeSelect = form.elements.scanMode;
 const subscriptionInput = form.elements.subscriptionId;
 const includeNonReadyInput = form.elements.includeNonReadyRegions;
@@ -454,6 +468,7 @@ function renderReport(report, downloadParams = new URLSearchParams(new FormData(
   counters.limitCount.textContent = number.format(report.totals.limits || 0);
   counters.errorCount.textContent = number.format(report.totals.errors || 0);
   counters.scanElapsed.textContent = formatDuration(report.totals.scanElapsedMs);
+  renderMetrics(report.telemetry, report.totals);
 
   renderRegionRows(currentRegions);
   renderLimitRows(currentRows);
@@ -578,11 +593,46 @@ function renderErrors(errors) {
   }
 }
 
+function renderMetrics(telemetry, totals = {}) {
+  if (!telemetry || !Number(telemetry.apiCalls)) {
+    metricsSection.hidden = true;
+    for (const element of Object.values(metrics)) {
+      element.textContent = '';
+    }
+    return;
+  }
+
+  const operations = telemetry.operations || [];
+  const usageOperation = operations.find((operation) => operation.operation === 'getResourceAvailability');
+  const slowestCall = telemetry.slowestCall || null;
+  metricsSection.hidden = false;
+  metrics.apiCalls.textContent = number.format(telemetry.apiCalls || 0);
+  metrics.operationCount.textContent = `${number.format(operations.length)} ${operations.length === 1 ? 'operation' : 'operations'} measured`;
+  metrics.dataReceived.textContent = formatBytes(telemetry.responseBytes || 0);
+  metrics.dataSent.textContent = formatBytes(telemetry.requestBytes || 0);
+  metrics.avgLatency.textContent = formatDuration(telemetry.avgLatencyMs || 0);
+  metrics.maxLatency.textContent = `max ${formatDuration(telemetry.maxLatencyMs || 0)}`;
+  metrics.cacheHits.textContent = number.format(totals.cachedServices || 0);
+  metrics.usageLookups.textContent = number.format(usageOperation?.calls || 0);
+  metrics.apiErrors.textContent = number.format(telemetry.apiErrors || 0);
+  metrics.slowestCall.textContent = slowestCall ? formatOperationName(slowestCall.operation) : 'None';
+  metrics.slowestCallDetail.textContent = slowestCall
+    ? [
+      formatDuration(slowestCall.latencyMs),
+      slowestCall.regionName,
+      slowestCall.serviceName,
+      slowestCall.limitName,
+      slowestCall.statusCode ? `status ${slowestCall.statusCode}` : ''
+    ].filter(Boolean).join(' | ')
+    : 'No calls measured';
+}
+
 function clearTables() {
   currentRows = [];
   currentRegions = [];
   lastPartialRenderKey = '';
   clearSummaryPanels();
+  renderMetrics(null);
   resetColumnFilters();
   populateColumnFilters([]);
   regionRowsEl.replaceChildren();
@@ -1046,6 +1096,25 @@ function formatDuration(value) {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.round(seconds % 60);
   return `${number.format(minutes)}m ${number.format(remainingSeconds)}s`;
+}
+
+function formatBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let unitIndex = 0;
+  let size = bytes;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${percentNumber.format(size)} ${units[unitIndex]}`;
+}
+
+function formatOperationName(value) {
+  return String(value || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/^./, (char) => char.toUpperCase());
 }
 
 function usageStatusLabel(row) {
