@@ -15,8 +15,8 @@ Animated dashboard feature walkthrough showing scan mode selection, progressive 
 - Added a Facts for nerds panel with OCI SDK call counts, estimated payload sizes, latency, cache hits, usage lookups, errors, and the slowest call.
 - Redesigned Facts for nerds as a compact telemetry board with an API pulse, metric tiles, slowest-call detail, and an operation mix chart.
 - Facts for nerds is collapsed by default behind a show/hide toggle, and the distracting animated API pulse bar was removed.
-- File-backed scan persistence now labels restored reports as loaded from persistence in the dashboard status/footer.
-- Browser refresh recovery keeps active scan progress and completed results available through server-owned scan sessions.
+- Restored scan sessions now show a top notice after browser refresh, and file-backed persisted scans keep the generated/saved timestamp notice.
+- Browser refresh recovery keeps active scan progress and completed results available through server-owned scan sessions, including a latest-scan fallback when browser storage is empty.
 - Docker persistence guidance now includes host filesystem mounts, with a Kubernetes persistent volume note.
 - README visuals now include an animated dashboard feature walkthrough at the top and a scan recovery flow diagram in the recovery section.
 
@@ -55,7 +55,7 @@ The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edi
 - Partial scan results render as regions complete, instead of waiting for the full tenancy scan to finish.
 - Region/service cache reuse reduces repeat scan time while the cache is fresh.
 - Fast scans can trigger a background full scan to warm usage data for later full scans.
-- Server-owned scan sessions let browser refreshes resume active scans and reload completed results.
+- Server-owned scan sessions let browser refreshes resume active scans and reload completed results. If browser storage is empty or stale, the app asks the server for the latest scan. Restored browser sessions show a top notice with generated time, row count, and a rescan action.
 - Optional file-backed scan persistence reloads completed scan reports after restart and labels them in the UI. Restored persisted scans show a top notice with generated time, saved time, row count, and a rescan action. The Summary header always shows the active data source: live scan, cache, restored session, or persistence.
 - Summary cards reset while a rescan is running and show total scan time when complete.
 - CSV and Excel downloads are enabled only after a completed scan and honor the latest criteria.
@@ -318,7 +318,7 @@ For OCI-hosted deployment, use `OCI_AUTH_METHOD=instance_principal` or `OCI_AUTH
 
 By default, the dashboard keeps active scan sessions in memory. A browser refresh can recover the scan while the server is still running, but a container restart clears in-memory scan jobs. For Docker deployments that need completed scan results to survive container restarts, set `SCAN_STORE=file`, mount a host filesystem path, and point `SCAN_DATA_DIR` at the mounted directory.
 
-When a completed scan result is loaded from file-backed persistence, the dashboard status and footer explicitly show that it was **loaded from persistence**.
+When a completed scan result is loaded from file-backed persistence, the dashboard status, footer, and top restored notice explicitly show that it was **loaded from persistence**. Browser-refresh recovery for an in-memory server session uses a similar top notice, but it does not call the data persisted because it is only held by the running Node.js process.
 
 Example host directory:
 
@@ -366,7 +366,7 @@ npm test
 
 - Added file-backed completed-scan persistence metadata and dashboard labeling when a report is loaded from persistence.
 - Added a visible Summary data-source badge so persistence, cache, restored-session, and live-scan sources are clear.
-- Added a top restored-persistence notice with generated/saved timestamps, row count, and a Refresh OCI action.
+- Added a top restored notice for browser-refresh session recovery, including latest-scan fallback, plus the persisted-scan notice with generated/saved timestamps, row count, and a Refresh OCI action.
 - Redesigned the Facts for nerds display into a more visual telemetry board with operation mix bars.
 - Added a hide/show control to collapse or expand the Facts for nerds telemetry board.
 - Changed Facts for nerds to stay collapsed by default and removed the animated API pulse bar.

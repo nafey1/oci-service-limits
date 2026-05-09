@@ -390,19 +390,32 @@ async function loadReport(forceRefresh = false) {
 
 async function restoreSavedScan() {
   const savedScanId = loadActiveScanId();
-  if (!savedScanId) return false;
+  if (!savedScanId) return restoreLatestScan();
 
   const response = await fetch(`/api/scans/${encodeURIComponent(savedScanId)}`);
   if (response.status === 404) {
     clearActiveScanId();
-    return false;
+    return restoreLatestScan();
   }
 
   const job = await response.json();
   if (!response.ok) {
     clearActiveScanId();
-    return false;
+    return restoreLatestScan();
   }
+
+  activeScanId = job.scanId;
+  saveActiveScanId(activeScanId);
+  await handleScanJob(job, criteriaVersion, { restored: true });
+  return true;
+}
+
+async function restoreLatestScan() {
+  const response = await fetch('/api/scans/latest');
+  if (response.status === 404) return false;
+
+  const job = await response.json();
+  if (!response.ok || !job?.scanId) return false;
 
   activeScanId = job.scanId;
   saveActiveScanId(activeScanId);
@@ -439,7 +452,7 @@ async function handleScanJob(job, scanCriteriaVersion = criteriaVersion, { resto
   if (job.hasPartialResult) {
     await loadScanResult(job.scanId, false, { allowPartial: true, restored });
   }
-  startProgressPolling(job.scanId, scanCriteriaVersion);
+  startProgressPolling(job.scanId, scanCriteriaVersion, { restored });
 }
 
 async function loadScanResult(scanId, downloadsCurrent = true, { allowPartial = false, restored = false } = {}) {
@@ -772,7 +785,7 @@ function scanSource() {
 }
 
 function syncRestoredNotice() {
-  const shouldShow = Boolean(lastScanMetadata?.loadedFromPersistence);
+  const shouldShow = Boolean(lastScanMetadata?.loadedFromPersistence || lastScanMetadata?.restoredFromSavedSession);
   restoredNotice.hidden = !shouldShow;
   if (!shouldShow) {
     restoredNoticeText.textContent = '';
@@ -782,7 +795,9 @@ function syncRestoredNotice() {
   const generated = formatDateTime(lastScanMetadata.generatedAt);
   const saved = formatDateTime(lastScanMetadata.persistedAt || lastScanMetadata.generatedAt);
   const rowCount = number.format(lastScanMetadata.rows ?? lastScanMetadata.limits ?? 0);
-  restoredNoticeText.textContent = `Restored persisted scan generated ${generated}, saved ${saved} (${rowCount} rows). Refresh to scan OCI again.`;
+  restoredNoticeText.textContent = lastScanMetadata.loadedFromPersistence
+    ? `Restored persisted scan generated ${generated}, saved ${saved} (${rowCount} rows). Refresh to scan OCI again.`
+    : `Restored scan session generated ${generated} (${rowCount} rows). Refresh to scan OCI again.`;
 }
 
 function scopeFooterText() {
@@ -1428,11 +1443,11 @@ function scanBannerDefaultText() {
     : 'Scanning OCI subscribed regions, service limits, and usage.';
 }
 
-function startProgressPolling(scanId, scanCriteriaVersion = criteriaVersion) {
+function startProgressPolling(scanId, scanCriteriaVersion = criteriaVersion, { restored = false } = {}) {
   stopProgressPolling();
-  pollScanProgress(scanId, scanCriteriaVersion).catch(() => {});
+  pollScanProgress(scanId, scanCriteriaVersion, { restored }).catch(() => {});
   progressPollTimer = window.setInterval(() => {
-    pollScanProgress(scanId, scanCriteriaVersion).catch(() => {});
+    pollScanProgress(scanId, scanCriteriaVersion, { restored }).catch(() => {});
   }, 900);
 }
 
@@ -1442,7 +1457,7 @@ function stopProgressPolling() {
   progressPollTimer = 0;
 }
 
-async function pollScanProgress(scanId, scanCriteriaVersion = criteriaVersion) {
+async function pollScanProgress(scanId, scanCriteriaVersion = criteriaVersion, { restored = false } = {}) {
   if (!scanId || scanId !== activeScanId) return;
   const response = await fetch(`/api/scans/${encodeURIComponent(scanId)}`);
   if (response.status === 404) {
@@ -1456,12 +1471,12 @@ async function pollScanProgress(scanId, scanCriteriaVersion = criteriaVersion) {
 
   if (job.status === 'complete' && job.hasResult) {
     stopProgressPolling();
-    await loadScanResult(scanId, criteriaVersion === scanCriteriaVersion);
+    await loadScanResult(scanId, criteriaVersion === scanCriteriaVersion, { restored });
   } else if (job.status === 'failed') {
     stopProgressPolling();
     showError(new Error(job.error?.message || job.progress?.message || 'Scan failed'));
   } else if (job.hasPartialResult) {
-    await loadScanResult(scanId, false, { allowPartial: true });
+    await loadScanResult(scanId, false, { allowPartial: true, restored });
   }
 }
 
