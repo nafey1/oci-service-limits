@@ -4,9 +4,9 @@ Node.js and Express dashboard for scanning an Oracle Cloud Infrastructure tenanc
 
 ## Screenshot
 
-Animated dashboard feature walkthrough showing scan mode selection, progressive table rendering, cache reuse, alert review, and exports:
+Animated dashboard feature walkthrough showing restored scan recovery, searchable filters, telemetry, alert review, row filters, and exports:
 
-![Animated OCI Service Limits dashboard walkthrough showing scan mode, progressive rendering, cached rescans, alerts, and exports](docs/images/scan-recovery-demo.gif)
+![Animated OCI Service Limits dashboard walkthrough showing restored scan notice, searchable filters, telemetry, alert policy, row filters, and exports](docs/images/scan-recovery-demo.gif)
 
 ## Latest Improvements
 
@@ -367,6 +367,7 @@ npm test
 - Added file-backed completed-scan persistence metadata and dashboard labeling when a report is loaded from persistence.
 - Added a visible Summary data-source badge so persistence, cache, restored-session, and live-scan sources are clear.
 - Added a top restored notice for browser-refresh session recovery, including latest-scan fallback, plus the persisted-scan notice with generated/saved timestamps, row count, and a Refresh OCI action.
+- Refreshed the animated README GIF with the current restored notice, searchable filters, telemetry panel, alert policy, row filters, and export controls.
 - Redesigned the Facts for nerds display into a more visual telemetry board with operation mix bars.
 - Added a hide/show control to collapse or expand the Facts for nerds telemetry board.
 - Changed Facts for nerds to stay collapsed by default and removed the animated API pulse bar.
