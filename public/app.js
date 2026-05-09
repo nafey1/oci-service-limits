@@ -4,6 +4,7 @@ const limitRowsEl = document.querySelector('#limitRows');
 const errorRowsEl = document.querySelector('#errorRows');
 const errorsSection = document.querySelector('#errorsSection');
 const statusText = document.querySelector('#statusText');
+const scanSourceBadge = document.querySelector('#scanSourceBadge');
 const csvLink = document.querySelector('#csvLink');
 const xlsxLink = document.querySelector('#xlsxLink');
 const themeSelect = document.querySelector('#themeSelect');
@@ -495,6 +496,7 @@ function renderReport(report, downloadParams = new URLSearchParams(new FormData(
     loadedFromPersistence: Boolean(report.loadedFromPersistence || report.scan?.loadedFromPersistence),
     persistedAt: report.persistedAt || report.scan?.persistedAt || '',
     storage: report.storage || report.scan?.storage || 'memory',
+    cachedReport: Boolean(report.scan?.cached),
     restoredFromSavedSession: Boolean(restored && !(report.loadedFromPersistence || report.scan?.loadedFromPersistence))
   };
   renderFooter();
@@ -704,6 +706,7 @@ function clearTables() {
 function renderFooter() {
   footerVersion.textContent = `v${appMetadata.version || '0.1.0'}`;
   footerRuntime.textContent = `Profile: ${appMetadata.profile || 'DEFAULT'} (${appMetadata.authMethod || 'config'})`;
+  syncScanSourceBadge();
 
   if (lastScanMetadata?.scanning) {
     footerScanContext.textContent = 'Last scan: scan in progress';
@@ -728,7 +731,9 @@ function renderFooter() {
     ? 'loaded from persistence'
     : lastScanMetadata.restoredFromSavedSession
       ? 'restored session'
-      : '';
+      : lastScanMetadata.cachedReport
+        ? 'cache'
+        : 'live scan';
   footerScanContext.textContent = `Last scan: ${generated}${source ? ` (${source})` : ''}`;
   footerScope.textContent = [
     `Scope: ${number.format(lastScanMetadata.scannedRegions)} of ${number.format(lastScanMetadata.selectedRegions)} selected regions`,
@@ -739,6 +744,22 @@ function renderFooter() {
     lastScanMetadata.cachedServices ? `${number.format(lastScanMetadata.cachedServices)} cached services` : '',
     lastScanMetadata.includeNonReadyRegions ? 'non-ready included' : 'ready only'
   ].filter(Boolean).join(' | ');
+}
+
+function syncScanSourceBadge() {
+  const source = scanSource();
+  scanSourceBadge.textContent = `Source: ${source.label}`;
+  scanSourceBadge.dataset.source = source.kind;
+}
+
+function scanSource() {
+  if (lastScanMetadata?.scanning) return { kind: 'scanning', label: 'scanning' };
+  if (lastScanMetadata?.error) return { kind: 'error', label: 'failed' };
+  if (!lastScanMetadata) return { kind: 'none', label: 'not loaded' };
+  if (lastScanMetadata.loadedFromPersistence) return { kind: 'persistence', label: 'persistence' };
+  if (lastScanMetadata.restoredFromSavedSession) return { kind: 'restored', label: 'restored session' };
+  if (lastScanMetadata.cachedReport) return { kind: 'cache', label: 'cache' };
+  return { kind: 'live', label: 'live scan' };
 }
 
 function scopeFooterText() {
