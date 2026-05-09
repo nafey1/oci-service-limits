@@ -357,6 +357,33 @@ body.scan-active .controls {
   margin-top: 2px;
 }
 
+.restored-notice {
+  align-items: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--teal) 16%, var(--panel)) 0%, color-mix(in srgb, var(--gold) 12%, var(--panel)) 100%);
+  border: 1px solid color-mix(in srgb, var(--teal) 38%, var(--line));
+  border-left: 6px solid var(--teal);
+  border-radius: 8px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 12px 14px;
+}
+
+.restored-notice[hidden] {
+  display: none;
+}
+
+.restored-notice span {
+  color: var(--ink);
+  font-size: 0.94rem;
+  font-weight: 800;
+}
+
+.restored-notice button {
+  white-space: nowrap;
+}
+
 .scan-progress {
   background: color-mix(in srgb, var(--brand) 12%, var(--input-bg));
   border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line));
@@ -1628,6 +1655,11 @@ body.column-resize-active {
     align-items: stretch;
     flex-direction: column;
     width: 100%;
+  }
+
+  .restored-notice {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .alert-controls,

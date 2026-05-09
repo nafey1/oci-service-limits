@@ -12,6 +12,9 @@ const scanBanner = document.querySelector('#scanBanner');
 const scanBannerDetail = document.querySelector('#scanBannerDetail');
 const scanProgressFill = document.querySelector('#scanProgressFill');
 const scanProgressText = document.querySelector('#scanProgressText');
+const restoredNotice = document.querySelector('#restoredNotice');
+const restoredNoticeText = document.querySelector('#restoredNoticeText');
+const restoredRefreshButton = document.querySelector('#restoredRefreshButton');
 const refreshButton = document.querySelector('#refreshButton');
 const footerVersion = document.querySelector('#footerVersion');
 const footerScanContext = document.querySelector('#footerScanContext');
@@ -167,6 +170,10 @@ boot().catch(showError);
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
+  loadReport(true).catch(showError);
+});
+
+restoredRefreshButton.addEventListener('click', () => {
   loadReport(true).catch(showError);
 });
 
@@ -490,6 +497,7 @@ function renderReport(report, downloadParams = new URLSearchParams(new FormData(
     scannedRegions: report.totals.scannedRegions || 0,
     services: report.totals.services || 0,
     limits: report.totals.limits || 0,
+    rows: (report.rows || []).length,
     scanMode: report.filters?.scanMode || scanModeSelect.value,
     cachedServices: report.totals.cachedServices || 0,
     includeNonReadyRegions: includeNonReadyInput.checked,
@@ -707,6 +715,7 @@ function renderFooter() {
   footerVersion.textContent = `v${appMetadata.version || '0.1.0'}`;
   footerRuntime.textContent = `Profile: ${appMetadata.profile || 'DEFAULT'} (${appMetadata.authMethod || 'config'})`;
   syncScanSourceBadge();
+  syncRestoredNotice();
 
   if (lastScanMetadata?.scanning) {
     footerScanContext.textContent = 'Last scan: scan in progress';
@@ -760,6 +769,20 @@ function scanSource() {
   if (lastScanMetadata.restoredFromSavedSession) return { kind: 'restored', label: 'restored session' };
   if (lastScanMetadata.cachedReport) return { kind: 'cache', label: 'cache' };
   return { kind: 'live', label: 'live scan' };
+}
+
+function syncRestoredNotice() {
+  const shouldShow = Boolean(lastScanMetadata?.loadedFromPersistence);
+  restoredNotice.hidden = !shouldShow;
+  if (!shouldShow) {
+    restoredNoticeText.textContent = '';
+    return;
+  }
+
+  const generated = formatDateTime(lastScanMetadata.generatedAt);
+  const saved = formatDateTime(lastScanMetadata.persistedAt || lastScanMetadata.generatedAt);
+  const rowCount = number.format(lastScanMetadata.rows ?? lastScanMetadata.limits ?? 0);
+  restoredNoticeText.textContent = `Restored persisted scan generated ${generated}, saved ${saved} (${rowCount} rows). Refresh to scan OCI again.`;
 }
 
 function scopeFooterText() {
@@ -1181,6 +1204,11 @@ function formatDuration(value) {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.round(seconds % 60);
   return `${number.format(minutes)}m ${number.format(remainingSeconds)}s`;
+}
+
+function formatDateTime(value) {
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : 'unknown time';
 }
 
 function formatBytes(value) {

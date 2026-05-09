@@ -56,7 +56,7 @@ The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edi
 - Region/service cache reuse reduces repeat scan time while the cache is fresh.
 - Fast scans can trigger a background full scan to warm usage data for later full scans.
 - Server-owned scan sessions let browser refreshes resume active scans and reload completed results.
-- Optional file-backed scan persistence reloads completed scan reports after restart and labels them in the UI. The Summary header always shows the active data source: live scan, cache, restored session, or persistence.
+- Optional file-backed scan persistence reloads completed scan reports after restart and labels them in the UI. Restored persisted scans show a top notice with generated time, saved time, row count, and a rescan action. The Summary header always shows the active data source: live scan, cache, restored session, or persistence.
 - Summary cards reset while a rescan is running and show total scan time when complete.
 - CSV and Excel downloads are enabled only after a completed scan and honor the latest criteria.
 - Theme selector includes Pastels, Light, Dark, Ocean, Forest, and Sunset.
@@ -366,6 +366,7 @@ npm test
 
 - Added file-backed completed-scan persistence metadata and dashboard labeling when a report is loaded from persistence.
 - Added a visible Summary data-source badge so persistence, cache, restored-session, and live-scan sources are clear.
+- Added a top restored-persistence notice with generated/saved timestamps, row count, and a Refresh OCI action.
 - Redesigned the Facts for nerds display into a more visual telemetry board with operation mix bars.
 - Added a hide/show control to collapse or expand the Facts for nerds telemetry board.
 - Added scan telemetry and a Facts for nerds UI panel for OCI API calls, estimated payload sizes, latency, cache hits, usage lookups, errors, and slowest-call detail.
