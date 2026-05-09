@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeLimitsQuery, parseList } from './config.js';
+import { normalizeLimitsQuery, normalizeScanStore, parseList } from './config.js';
 import { createScanTelemetry, reportToCsv, reportToXlsx } from './limitsScan.js';
 
 test('parseList trims comma-separated values', () => {
@@ -36,6 +36,13 @@ test('normalizeLimitsQuery accepts fast scan mode', () => {
   });
 
   assert.equal(query.scanMode, 'fast');
+});
+
+test('normalizeScanStore only enables supported stores', () => {
+  assert.equal(normalizeScanStore('file'), 'file');
+  assert.equal(normalizeScanStore('FILE'), 'file');
+  assert.equal(normalizeScanStore('memory'), 'memory');
+  assert.equal(normalizeScanStore('sqlite'), 'memory');
 });
 
 test('reportToCsv escapes cells', () => {

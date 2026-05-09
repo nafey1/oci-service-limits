@@ -5,4 +5,5 @@ node_modules/
 .oci/
 npm-debug.log
 coverage/
+data/
 .DS_Store

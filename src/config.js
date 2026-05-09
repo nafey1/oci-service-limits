@@ -35,6 +35,8 @@ export function getAppConfig() {
     resourceAvailabilityConcurrency: intEnv('RESOURCE_AVAILABILITY_CONCURRENCY', 2, 1),
     cacheTtlSeconds: intEnv('CACHE_TTL_SECONDS', 300, 0),
     backgroundFullScanOnFast: boolEnv('BACKGROUND_FULL_SCAN_ON_FAST', true),
+    scanStore: normalizeScanStore(env('SCAN_STORE', 'memory')),
+    scanDataDir: path.resolve(env('SCAN_DATA_DIR', 'data/scans')),
     defaults: {
       regions: env('DEFAULT_REGION_NAMES'),
       services: env('DEFAULT_SERVICE_NAMES'),
@@ -99,6 +101,11 @@ export function parseBoolean(value, fallback = false) {
 export function normalizeScanMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
   return normalized === 'fast' ? 'fast' : 'full';
+}
+
+export function normalizeScanStore(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'file' ? 'file' : 'memory';
 }
 
 function firstValue(value) {

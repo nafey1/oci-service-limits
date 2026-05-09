@@ -1,6 +1,8 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { createTtlCache } from './cache.js';
 import { getAppConfig, normalizeLimitsQuery } from './config.js';
 import { createAuthProvider, getAuthProviderRegionId, getAuthProviderTenancyId } from './ociAuth.js';
@@ -15,6 +17,7 @@ const scanProgress = new Map();
 const scanJobs = new Map();
 const backgroundWarmups = new Map();
 const scanJobTtlMs = 60 * 60 * 1000;
+const fileScanStoreEnabled = config.scanStore === 'file';
 
 let latestScanId = '';
 
@@ -62,68 +65,80 @@ app.post('/api/scans', async (req, res, next) => {
   }
 });
 
-app.get('/api/scans/latest', (req, res) => {
-  cleanupScanJobs();
-  const job = latestScanJob();
-  if (!job) {
-    res.status(404).json({ error: 'No scan jobs found' });
-    return;
-  }
-
-  res.json(scanJobSummary(job));
-});
-
-app.get('/api/scans/:scanId', (req, res) => {
-  cleanupScanJobs();
-  const job = scanJobFrom(req.params.scanId);
-  if (!job) {
-    res.status(404).json({ error: 'Scan job not found' });
-    return;
-  }
-
-  res.json(scanJobSummary(job));
-});
-
-app.get('/api/scans/:scanId/result', (req, res) => {
-  cleanupScanJobs();
-  const job = scanJobFrom(req.params.scanId);
-  if (!job) {
-    res.status(404).json({ error: 'Scan job not found' });
-    return;
-  }
-
-  if (job.status === 'failed') {
-    res.status(500).json({ error: job.error?.message || 'Scan failed' });
-    return;
-  }
-
-  if (job.status !== 'complete' || !job.result) {
-    if (job.partialResult) {
-      res.status(206).json({
-        ...job.partialResult,
-        partial: true,
-        scan: scanJobSummary(job)
-      });
+app.get('/api/scans/latest', async (req, res, next) => {
+  try {
+    cleanupScanJobs();
+    const job = await latestScanJob();
+    if (!job) {
+      res.status(404).json({ error: 'No scan jobs found' });
       return;
     }
 
-    res.status(202).json(scanJobSummary(job));
-    return;
+    res.json(scanJobSummary(job));
+  } catch (error) {
+    next(error);
   }
-
-  res.json(job.result);
 });
 
-app.get('/api/progress/:scanId', (req, res) => {
-  cleanupScanJobs();
-  const job = scanJobFrom(req.params.scanId);
-  const progress = job?.progress || scanProgress.get(scanIdFrom(req.params.scanId));
-  if (!progress) {
-    res.status(404).json({ error: 'Scan progress not found' });
-    return;
-  }
+app.get('/api/scans/:scanId', async (req, res, next) => {
+  try {
+    cleanupScanJobs();
+    const job = await scanJobFrom(req.params.scanId);
+    if (!job) {
+      res.status(404).json({ error: 'Scan job not found' });
+      return;
+    }
 
-  res.json(progress);
+    res.json(scanJobSummary(job));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/scans/:scanId/result', async (req, res, next) => {
+  try {
+    cleanupScanJobs();
+    const job = await scanJobFrom(req.params.scanId);
+    if (!job) {
+      res.status(404).json({ error: 'Scan job not found' });
+      return;
+    }
+
+    if (job.status === 'failed') {
+      res.status(500).json({ error: job.error?.message || 'Scan failed' });
+      return;
+    }
+
+    if (job.status !== 'complete' || !job.result) {
+      if (job.partialResult) {
+        res.status(206).json(scanReportForResponse(job.partialResult, job, { partial: true }));
+        return;
+      }
+
+      res.status(202).json(scanJobSummary(job));
+      return;
+    }
+
+    res.json(scanReportForResponse(job.result, job));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/progress/:scanId', async (req, res, next) => {
+  try {
+    cleanupScanJobs();
+    const job = await scanJobFrom(req.params.scanId);
+    const progress = job?.progress || scanProgress.get(scanIdFrom(req.params.scanId));
+    if (!progress) {
+      res.status(404).json({ error: 'Scan progress not found' });
+      return;
+    }
+
+    res.json(progress);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get('/api/limits.csv', async (req, res, next) => {
@@ -137,12 +152,16 @@ app.get('/api/limits.csv', async (req, res, next) => {
   }
 });
 
-app.get('/api/scans/:scanId/limits.csv', (req, res) => {
-  const report = completedScanReport(req.params.scanId, res);
-  if (!report) return;
-  res.type('text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="oci-service-limits.csv"');
-  res.send(reportToCsv(report));
+app.get('/api/scans/:scanId/limits.csv', async (req, res, next) => {
+  try {
+    const report = await completedScanReport(req.params.scanId, res);
+    if (!report) return;
+    res.type('text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="oci-service-limits.csv"');
+    res.send(reportToCsv(report));
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get('/api/limits.xlsx', async (req, res, next) => {
@@ -156,12 +175,16 @@ app.get('/api/limits.xlsx', async (req, res, next) => {
   }
 });
 
-app.get('/api/scans/:scanId/limits.xlsx', (req, res) => {
-  const report = completedScanReport(req.params.scanId, res);
-  if (!report) return;
-  res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', 'attachment; filename="oci-service-limits.xlsx"');
-  res.send(reportToXlsx(report));
+app.get('/api/scans/:scanId/limits.xlsx', async (req, res, next) => {
+  try {
+    const report = await completedScanReport(req.params.scanId, res);
+    if (!report) return;
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="oci-service-limits.xlsx"');
+    res.send(reportToXlsx(report));
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get('/api/options/regions', async (req, res, next) => {
@@ -234,7 +257,10 @@ async function createScanJob(rawQuery) {
     result: null,
     partialResult: null,
     error: null,
-    cached: false
+    cached: false,
+    storage: fileScanStoreEnabled ? 'file' : 'memory',
+    loadedFromPersistence: false,
+    persistedAt: ''
   };
 
   scanJobs.set(scanId, job);
@@ -270,6 +296,7 @@ async function runScanJob(job, context, query) {
       rows: report.rows?.length || 0,
       errors: report.errors?.length || 0
     });
+    await persistCompletedScanJob(job);
     scheduleBackgroundFullScan(context, query);
   } catch (error) {
     job.status = 'failed';
@@ -382,20 +409,22 @@ function updateScanProgress(scanId, update) {
   }
 }
 
-function scanJobFrom(value) {
+async function scanJobFrom(value) {
   const scanId = scanIdFrom(value);
-  return scanId ? scanJobs.get(scanId) : undefined;
+  if (!scanId) return undefined;
+  return scanJobs.get(scanId) || await loadPersistedScanJob(scanId);
 }
 
-function latestScanJob() {
+async function latestScanJob() {
   if (latestScanId && scanJobs.has(latestScanId)) return scanJobs.get(latestScanId);
-  return Array.from(scanJobs.values())
+  const memoryJob = Array.from(scanJobs.values())
     .sort((a, b) => Date.parse(b.updatedAt || b.createdAt) - Date.parse(a.updatedAt || a.createdAt))[0];
+  return memoryJob || await loadLatestPersistedScanJob();
 }
 
-function completedScanReport(value, res) {
+async function completedScanReport(value, res) {
   cleanupScanJobs();
-  const job = scanJobFrom(value);
+  const job = await scanJobFrom(value);
   if (!job) {
     res.status(404).json({ error: 'Scan job not found' });
     return null;
@@ -419,6 +448,9 @@ function scanJobSummary(job) {
     done: job.status === 'complete' || job.status === 'failed',
     failed: job.status === 'failed',
     cached: Boolean(job.cached),
+    storage: job.storage || 'memory',
+    loadedFromPersistence: Boolean(job.loadedFromPersistence),
+    persistedAt: job.persistedAt || '',
     hasResult: Boolean(job.result),
     hasPartialResult: Boolean(job.partialResult),
     partialRows: job.partialResult?.rows?.length || 0,
@@ -426,6 +458,118 @@ function scanJobSummary(job) {
     progress: job.progress,
     error: job.error
   };
+}
+
+function scanReportForResponse(report, job, { partial = false } = {}) {
+  return {
+    ...report,
+    partial: Boolean(partial || report.partial),
+    storage: job.storage || 'memory',
+    loadedFromPersistence: Boolean(job.loadedFromPersistence),
+    persistedAt: job.persistedAt || '',
+    scan: scanJobSummary(job)
+  };
+}
+
+async function persistCompletedScanJob(job) {
+  if (!fileScanStoreEnabled || job.status !== 'complete' || !job.result) return;
+
+  const persistedAt = new Date().toISOString();
+  const payload = {
+    scanId: job.scanId,
+    status: job.status,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    completedAt: job.completedAt,
+    query: job.query,
+    progress: job.progress,
+    result: job.result,
+    partialResult: null,
+    error: job.error,
+    cached: Boolean(job.cached),
+    storage: 'file',
+    persistedAt
+  };
+
+  await mkdir(config.scanDataDir, { recursive: true });
+  await writeFile(persistedScanPath(job.scanId), JSON.stringify(payload), 'utf8');
+  job.storage = 'file';
+  job.persistedAt = persistedAt;
+}
+
+async function loadPersistedScanJob(scanId) {
+  if (!fileScanStoreEnabled) return undefined;
+
+  try {
+    const payload = JSON.parse(await readFile(persistedScanPath(scanId), 'utf8'));
+    if (payload?.scanId !== scanId || payload.status !== 'complete' || !payload.result) return undefined;
+
+    const job = {
+      scanId: payload.scanId,
+      status: 'complete',
+      createdAt: payload.createdAt || payload.completedAt || new Date().toISOString(),
+      updatedAt: payload.updatedAt || payload.persistedAt || payload.completedAt || new Date().toISOString(),
+      completedAt: payload.completedAt || payload.persistedAt || '',
+      query: payload.query || {},
+      progress: payload.progress || {
+        scanId,
+        phase: 'complete',
+        message: 'Loaded scan result from persistence',
+        percent: 100,
+        done: true,
+        failed: false,
+        createdAt: payload.createdAt || new Date().toISOString(),
+        updatedAt: payload.persistedAt || new Date().toISOString()
+      },
+      result: payload.result,
+      partialResult: null,
+      error: payload.error || null,
+      cached: Boolean(payload.cached),
+      storage: 'file',
+      loadedFromPersistence: true,
+      persistedAt: payload.persistedAt || ''
+    };
+    job.progress = {
+      ...job.progress,
+      scanId,
+      message: 'Loaded scan result from persistence',
+      done: true,
+      failed: false,
+      cached: Boolean(job.cached)
+    };
+
+    scanJobs.set(scanId, job);
+    latestScanId = scanId;
+    scanProgress.set(scanId, job.progress);
+    return job;
+  } catch (error) {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+async function loadLatestPersistedScanJob() {
+  if (!fileScanStoreEnabled) return undefined;
+
+  try {
+    const entries = await readdir(config.scanDataDir, { withFileTypes: true });
+    const candidates = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+      .map((entry) => entry.name.slice(0, -5))
+      .filter((scanId) => scanIdFrom(scanId));
+
+    const jobs = (await Promise.all(candidates.map((scanId) => loadPersistedScanJob(scanId)))).filter(Boolean);
+    const latest = jobs.sort((a, b) => Date.parse(b.persistedAt || b.completedAt || 0) - Date.parse(a.persistedAt || a.completedAt || 0))[0];
+    if (latest) latestScanId = latest.scanId;
+    return latest;
+  } catch (error) {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+function persistedScanPath(scanId) {
+  return path.join(config.scanDataDir, `${scanId}.json`);
 }
 
 function touchScanJob(job) {

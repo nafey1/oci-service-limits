@@ -410,7 +410,7 @@ async function handleScanJob(job, scanCriteriaVersion = criteriaVersion, { resto
 
   if (job.status === 'complete' && job.hasResult) {
     stopProgressPolling();
-    await loadScanResult(job.scanId, criteriaVersion === scanCriteriaVersion);
+    await loadScanResult(job.scanId, criteriaVersion === scanCriteriaVersion, { restored });
     return;
   }
 
@@ -429,12 +429,12 @@ async function handleScanJob(job, scanCriteriaVersion = criteriaVersion, { resto
   disableDownloads('Scan in progress');
   updateScanProgressDisplay(job.progress || { percent: 1, message: 'Preparing scan' });
   if (job.hasPartialResult) {
-    await loadScanResult(job.scanId, false, { allowPartial: true });
+    await loadScanResult(job.scanId, false, { allowPartial: true, restored });
   }
   startProgressPolling(job.scanId, scanCriteriaVersion);
 }
 
-async function loadScanResult(scanId, downloadsCurrent = true, { allowPartial = false } = {}) {
+async function loadScanResult(scanId, downloadsCurrent = true, { allowPartial = false, restored = false } = {}) {
   const loadingKey = `${scanId}:${allowPartial ? 'partial' : 'final'}`;
   if (!scanId || scanResultLoadingId === loadingKey) return;
   scanResultLoadingId = loadingKey;
@@ -449,14 +449,15 @@ async function loadScanResult(scanId, downloadsCurrent = true, { allowPartial = 
     if (!response.ok) throw new Error(body.detail || body.error || 'Scan result request failed');
     if (body.partial && !allowPartial) return;
     renderReport(body, new URLSearchParams(new FormData(form)), downloadsCurrent, scanId, {
-      partial: Boolean(body.partial)
+      partial: Boolean(body.partial),
+      restored: Boolean(restored || body.loadedFromPersistence || body.scan?.loadedFromPersistence)
     });
   } finally {
     scanResultLoadingId = '';
   }
 }
 
-function renderReport(report, downloadParams = new URLSearchParams(new FormData(form)), downloadsCurrent = true, scanId = '', { partial = false } = {}) {
+function renderReport(report, downloadParams = new URLSearchParams(new FormData(form)), downloadsCurrent = true, scanId = '', { partial = false, restored = false } = {}) {
   const partialRenderKey = partial
     ? [
       report.totals?.scannedRegions || 0,
@@ -490,7 +491,11 @@ function renderReport(report, downloadParams = new URLSearchParams(new FormData(
     limits: report.totals.limits || 0,
     scanMode: report.filters?.scanMode || scanModeSelect.value,
     cachedServices: report.totals.cachedServices || 0,
-    includeNonReadyRegions: includeNonReadyInput.checked
+    includeNonReadyRegions: includeNonReadyInput.checked,
+    loadedFromPersistence: Boolean(report.loadedFromPersistence || report.scan?.loadedFromPersistence),
+    persistedAt: report.persistedAt || report.scan?.persistedAt || '',
+    storage: report.storage || report.scan?.storage || 'memory',
+    restoredFromSavedSession: Boolean(restored && !(report.loadedFromPersistence || report.scan?.loadedFromPersistence))
   };
   renderFooter();
 
@@ -510,7 +515,9 @@ function renderReport(report, downloadParams = new URLSearchParams(new FormData(
   stopProgressPolling();
 
   const generated = new Date(report.generatedAt).toLocaleString();
-  statusText.textContent = `${number.format(report.totals.selectedRegions || 0)} selected, generated ${generated}`;
+  statusText.textContent = lastScanMetadata.loadedFromPersistence
+    ? `${number.format(report.totals.selectedRegions || 0)} selected, loaded from persistence, generated ${generated}`
+    : `${number.format(report.totals.selectedRegions || 0)} selected, generated ${generated}`;
   if (downloadsCurrent) {
     if (scanId) {
       enableDownloadsForScan(scanId);
@@ -717,12 +724,18 @@ function renderFooter() {
   }
 
   const generated = new Date(lastScanMetadata.generatedAt).toLocaleString();
-  footerScanContext.textContent = `Last scan: ${generated}`;
+  const source = lastScanMetadata.loadedFromPersistence
+    ? 'loaded from persistence'
+    : lastScanMetadata.restoredFromSavedSession
+      ? 'restored session'
+      : '';
+  footerScanContext.textContent = `Last scan: ${generated}${source ? ` (${source})` : ''}`;
   footerScope.textContent = [
     `Scope: ${number.format(lastScanMetadata.scannedRegions)} of ${number.format(lastScanMetadata.selectedRegions)} selected regions`,
     `${number.format(lastScanMetadata.services)} services`,
     `${number.format(lastScanMetadata.limits)} limits`,
     lastScanMetadata.scanMode === 'fast' ? 'fast limits only' : 'full usage scan',
+    lastScanMetadata.loadedFromPersistence ? 'persistence source' : '',
     lastScanMetadata.cachedServices ? `${number.format(lastScanMetadata.cachedServices)} cached services` : '',
     lastScanMetadata.includeNonReadyRegions ? 'non-ready included' : 'ready only'
   ].filter(Boolean).join(' | ');

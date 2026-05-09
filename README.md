@@ -15,6 +15,7 @@ Animated dashboard feature walkthrough showing scan mode selection, progressive 
 - Added a Facts for nerds panel with OCI SDK call counts, estimated payload sizes, latency, cache hits, usage lookups, errors, and the slowest call.
 - Redesigned Facts for nerds as a compact telemetry board with an API pulse, metric tiles, slowest-call detail, and an operation mix chart.
 - Added a hide/show toggle for the Facts for nerds telemetry board.
+- File-backed scan persistence now labels restored reports as loaded from persistence in the dashboard status/footer.
 - Browser refresh recovery keeps active scan progress and completed results available through server-owned scan sessions.
 - Docker persistence guidance now includes host filesystem mounts, with a Kubernetes persistent volume note.
 - README visuals now include an animated dashboard feature walkthrough at the top and a scan recovery flow diagram in the recovery section.
@@ -55,6 +56,7 @@ The default local auth path uses `~/.oci/config` with the `DEFAULT` profile. Edi
 - Region/service cache reuse reduces repeat scan time while the cache is fresh.
 - Fast scans can trigger a background full scan to warm usage data for later full scans.
 - Server-owned scan sessions let browser refreshes resume active scans and reload completed results.
+- Optional file-backed scan persistence reloads completed scan reports after restart and labels them in the UI.
 - Summary cards reset while a rescan is running and show total scan time when complete.
 - CSV and Excel downloads are enabled only after a completed scan and honor the latest criteria.
 - Theme selector includes Pastels, Light, Dark, Ocean, Forest, and Sunset.
@@ -147,6 +149,8 @@ Copy `.env.example` to `.env` and adjust the values you need.
 | `OCI_PAGE_SIZE` | `1000` | OCI list page size. |
 | `CACHE_TTL_SECONDS` | `300` | In-memory report and region/service cache TTL. |
 | `BACKGROUND_FULL_SCAN_ON_FAST` | `true` | After a fast scan, warm the full usage cache in the background. |
+| `SCAN_STORE` | `memory` | Use `file` to persist completed scan jobs to disk. |
+| `SCAN_DATA_DIR` | `data/scans` | Directory for persisted scan jobs when `SCAN_STORE=file`. |
 
 ## Dashboard Workflow
 
@@ -222,13 +226,13 @@ Returns scan status, progress, criteria summary, and completion/error metadata.
 
 ### `GET /api/scans/latest`
 
-Returns the latest active or completed scan job still held in memory.
+Returns the latest active or completed scan job. When `SCAN_STORE=file`, completed persisted jobs can also be reloaded from disk.
 
 ### `GET /api/scans/:scanId/result`
 
 Returns the completed scan report. If the scan is still running and partial region results are available, the endpoint returns `206` with `partial: true`. If no partial result is available yet, it returns `202` with scan metadata.
 
-Completed and partial reports include a `telemetry` object with SDK call counts, estimated request/response bytes, operation latency, API error count, operation summaries, and slowest-call detail.
+Completed and partial reports include a `telemetry` object with SDK call counts, estimated request/response bytes, operation latency, API error count, operation summaries, and slowest-call detail. Persisted scan responses also include `storage: "file"` and `loadedFromPersistence: true`.
 
 ### `GET /api/scans/:scanId/limits.csv`
 
@@ -312,7 +316,9 @@ For OCI-hosted deployment, use `OCI_AUTH_METHOD=instance_principal` or `OCI_AUTH
 
 ### Host Filesystem Mount for Docker Persistence
 
-The dashboard currently keeps scan sessions in memory. A browser refresh can recover the scan, but a container restart clears in-memory scan jobs. For Docker deployments that need persistence across container restarts, mount a host filesystem path and configure the app to use that path for persisted scan state when file-backed scan storage is enabled.
+By default, the dashboard keeps active scan sessions in memory. A browser refresh can recover the scan while the server is still running, but a container restart clears in-memory scan jobs. For Docker deployments that need completed scan results to survive container restarts, set `SCAN_STORE=file`, mount a host filesystem path, and point `SCAN_DATA_DIR` at the mounted directory.
+
+When a completed scan result is loaded from file-backed persistence, the dashboard status and footer explicitly show that it was **loaded from persistence**.
 
 Example host directory:
 
@@ -358,6 +364,7 @@ npm test
 
 ## Repository Update History
 
+- Added file-backed completed-scan persistence metadata and dashboard labeling when a report is loaded from persistence.
 - Redesigned the Facts for nerds display into a more visual telemetry board with operation mix bars.
 - Added a hide/show control to collapse or expand the Facts for nerds telemetry board.
 - Added scan telemetry and a Facts for nerds UI panel for OCI API calls, estimated payload sizes, latency, cache hits, usage lookups, errors, and slowest-call detail.
