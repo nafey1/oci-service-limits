@@ -19,6 +19,8 @@ const footerRuntime = document.querySelector('#footerRuntime');
 const limitRowCount = document.querySelector('#limitRowCount');
 const summaryToggle = document.querySelector('#summaryToggle');
 const summaryTableWrap = document.querySelector('#summaryTableWrap');
+const metricsToggle = document.querySelector('#metricsToggle');
+const metricsBoard = document.querySelector('#metricsBoard');
 const alertPolicySelect = document.querySelector('#alertPolicy');
 const warningThresholdInput = document.querySelector('#warningThreshold');
 const criticalThresholdInput = document.querySelector('#criticalThreshold');
@@ -104,6 +106,7 @@ let lastScanMetadata = null;
 let activeScanId = '';
 let scanResultLoadingId = '';
 let lastPartialRenderKey = '';
+let metricsCollapsed = false;
 let progressPollTimer = 0;
 let serviceOptionsRequestId = 0;
 let limitOptionsRequestId = 0;
@@ -202,6 +205,11 @@ summaryToggle.addEventListener('click', () => {
   summaryTableWrap.hidden = !shouldShow;
   summaryToggle.textContent = shouldShow ? 'Hide' : 'Show';
   summaryToggle.setAttribute('aria-expanded', String(shouldShow));
+});
+
+metricsToggle.addEventListener('click', () => {
+  metricsCollapsed = !metricsCollapsed;
+  syncMetricsToggle();
 });
 
 document.addEventListener('click', (event) => {
@@ -627,6 +635,13 @@ function renderMetrics(telemetry, totals = {}) {
     ].filter(Boolean).join(' | ')
     : 'No calls measured';
   renderOperationMix(operations, telemetry.apiCalls || 0);
+  syncMetricsToggle();
+}
+
+function syncMetricsToggle() {
+  metricsBoard.hidden = metricsCollapsed;
+  metricsToggle.textContent = metricsCollapsed ? 'Show' : 'Hide';
+  metricsToggle.setAttribute('aria-expanded', String(!metricsCollapsed));
 }
 
 function renderOperationMix(operations, apiCalls) {

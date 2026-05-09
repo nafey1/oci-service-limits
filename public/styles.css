@@ -745,6 +745,10 @@ select {
   padding: 14px 18px 18px;
 }
 
+.metrics-board[hidden] {
+  display: none;
+}
+
 .metric-lead,
 .metric-card,
 .metric-slowest,

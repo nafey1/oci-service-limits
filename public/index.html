@@ -146,9 +146,12 @@
     <section class="metrics-section" id="metricsSection" hidden>
       <div class="section-head">
         <h2>Facts for nerds</h2>
-        <span id="metricsNote">Scan telemetry from OCI SDK calls and estimated application payloads</span>
+        <div class="section-actions">
+          <span id="metricsNote">Scan telemetry from OCI SDK calls and estimated application payloads</span>
+          <button class="secondary-button" id="metricsToggle" type="button" aria-expanded="true" aria-controls="metricsBoard">Hide</button>
+        </div>
       </div>
-      <div class="metrics-board">
+      <div class="metrics-board" id="metricsBoard">
         <article class="metric-lead">
           <span>API pulse</span>
           <strong id="metricApiCalls">0</strong>
