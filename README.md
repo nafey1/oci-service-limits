@@ -23,8 +23,8 @@ Animated dashboard feature walkthrough showing restored scan recovery, searchabl
 ## Quick Start
 
 ```bash
-git clone https://github.com/nafey1/OCI-Service-Limts.git
-cd OCI-Service-Limts
+git clone https://github.com/nafey1/oci-service-limits.git
+cd oci-service-limits
 cp .env.example .env
 npm install
 npm start
@@ -110,7 +110,7 @@ Do not skip this. If IAM is wrong, the dashboard may authenticate successfully a
 ## Local Run
 
 ```bash
-cd OCI-Service-Limts
+cd oci-service-limits
 cp .env.example .env
 npm install
 npm start
